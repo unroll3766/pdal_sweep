@@ -20,7 +20,7 @@ from matplotlib.figure import Figure
 
 def _new_fig(w, h):
     """A fresh Agg figure with no global pyplot state."""
-    fig = Figure(figsize=(w, h), dpi=100)
+    fig = Figure(figsize=(w, h), dpi=150)
     FigureCanvasAgg(fig)
     ax = fig.subplots()
     return fig, ax

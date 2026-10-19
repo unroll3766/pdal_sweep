@@ -70,6 +70,14 @@ present; use the browse button to pick any LAS/LAZ file.
 5. **Compare**: any two runs side by side across the same output tabs,
    with a synced cross-section slider.
 
+Builder conveniences: steps can be reordered with **up**/**down**, each
+alternative filter can be **collapsed** for readability, **reset
+defaults** restores the installed PDAL's documented defaults for a filter
+(discarding edits and custom params), and **+ skip** adds a "no filter at
+this step" alternative so the grid can test a step's inclusion (e.g.
+with vs without an outlier filter). Skip alternatives round-trip through
+spec import/export like any other.
+
 The grid search definition can be shared as JSON: "export JSON" in the
 builder writes the current spec (steps, alternatives, vary lists, set
 toggles, outputs, and run settings); "import JSON" loads one back into

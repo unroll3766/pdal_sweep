@@ -36,56 +36,128 @@ DEFAULT_INPUT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 class ZoomableImage(tk.Canvas):
-    """Canvas image viewer: wheel zoom, drag pan, double-click reset."""
+    """Crop-based image viewport: wheel zoom anchored at the cursor,
+    drag to pan, double-click (or the fit button) to reset.
+
+    Zoom renders only the visible crop from the source image (LANCZOS),
+    so panning and zooming stay fast and sharp at any magnification.
+    """
 
     def __init__(self, master, **kw):
         super().__init__(master, bg=CANVAS_BG, highlightthickness=0, **kw)
         self._pil = None
         self._photo = None
-        self._zoom = 1.0
-        self.bind("<Configure>", lambda e: self._redraw())
+        self._zoom = 1.0    # display scale relative to fit-width
+        self._cx = 0.0      # viewport center in source pixels
+        self._cy = 0.0
+        self.bind("<Configure>", lambda e: self._render())
         self.bind("<MouseWheel>", self._on_wheel)
         self.bind("<ButtonPress-1>", self._on_press)
         self.bind("<B1-Motion>", self._on_drag)
-        self.bind("<Double-Button-1>", lambda e: self._set_zoom(1.0))
-        # linux: button 4/5 are wheel events too
-        self.bind("<Button-4>", lambda e: self._set_zoom(self._zoom * 1.15))
-        self.bind("<Button-5>", lambda e: self._set_zoom(self._zoom / 1.15))
+        self.bind("<Double-Button-1>", lambda e: self.fit())
+        self.bind("<Button-4>", lambda e: self._on_button45(1.25))
+        self.bind("<Button-5>", lambda e: self._on_button45(1 / 1.25))
+        # small overlay button to reset the view
+        self._fit_btn = tk.Button(self, text="fit", fg=ACCENT, bg=BG,
+                                  activebackground=BG, relief="flat",
+                                  command=self.fit)
+        self._fit_btn.place(relx=1.0, rely=0.0, x=-34, y=2, width=30)
 
     def set_image_pil(self, pil_img):
         self._pil = pil_img
-        self._set_zoom(1.0)
+        self.fit()
 
     def set_image_bytes(self, png_bytes):
         if png_bytes:
             self.set_image_pil(Image.open(io.BytesIO(png_bytes)))
+
+    # ------------------------------------------------------------- helpers
 
     def _fit_scale(self):
         if not self._pil:
             return 1.0
         return max(0.01, self.winfo_width() / self._pil.width)
 
+    def fit(self):
+        """Whole image fitted to the canvas width."""
+        if self._pil:
+            self._cx = self._pil.width / 2.0
+            self._cy = self._pil.height / 2.0
+        self._zoom = 1.0
+        self._render()
+
+    def _source_center_at(self, x, y):
+        """Convert canvas pixel (x, y) to source-image coordinates."""
+        base = self._fit_scale() * self._zoom
+        w, h = self.winfo_width(), self.winfo_height()
+        return (self._cx + (x - w / 2.0) / base,
+                self._cy + (y - h / 2.0) / base)
+
+    def _clamp_center(self):
+        if not self._pil:
+            return
+        base = self._fit_scale() * self._zoom
+        half_w = self.winfo_width() / (2.0 * base)
+        half_h = self.winfo_height() / (2.0 * base)
+        self._cx = min(max(self._cx, half_w), self._pil.width - half_w) \
+            if self._pil.width > 2 * half_w else self._pil.width / 2.0
+        self._cy = min(max(self._cy, half_h), self._pil.height - half_h) \
+            if self._pil.height > 2 * half_h else self._pil.height / 2.0
+
+    def _set_zoom(self, z, anchor=None):
+        z = max(1.0, min(16.0, z))
+        if anchor is not None:
+            ax, ay = self._source_center_at(*anchor)
+            self._cx, self._cy = ax, ay
+        self._zoom = z
+        if anchor is not None:
+            # keep the anchored source point under the cursor after zooming
+            base = self._fit_scale() * self._zoom
+            w, h = self.winfo_width(), self.winfo_height()
+            self._cx = ax - (anchor[0] - w / 2.0) / base
+            self._cy = ay - (anchor[1] - h / 2.0) / base
+        self._clamp_center()
+        self._render()
+
+    # ------------------------------------------------------------ events
+
     def _on_wheel(self, e):
-        self._set_zoom(self._zoom * (1.15 if e.delta > 0 else 1 / 1.15))
+        factor = 1.25 if e.delta > 0 else 1 / 1.25
+        self._set_zoom(self._zoom * factor, anchor=(e.x, e.y))
+
+    def _on_button45(self, factor):
+        w, h = self.winfo_width() / 2.0, self.winfo_height() / 2.0
+        self._set_zoom(self._zoom * factor, anchor=(w, h))
 
     def _on_press(self, e):
-        self.scan_mark(e.x, e.y)
+        self._lx, self._ly = e.x, e.y
 
     def _on_drag(self, e):
-        self.scan_dragto(e.x, e.y, gain=1)
+        base = self._fit_scale() * self._zoom
+        self._cx -= (e.x - self._lx) / base
+        self._cy -= (e.y - self._ly) / base
+        self._lx, self._ly = e.x, e.y
+        self._clamp_center()
+        self._render()
 
-    def _set_zoom(self, z):
-        self._zoom = max(1.0, min(8.0, z))
-        self._redraw()
+    # ------------------------------------------------------------- render
 
-    def _redraw(self):
+    def _render(self):
         self.delete("all")
+        self._fit_btn.place(relx=1.0, rely=0.0, x=-34, y=2, width=30)
         if not self._pil or self.winfo_width() < 4:
             return
-        base = self._fit_scale()
-        w = max(1, int(self._pil.width * base * self._zoom))
-        h = max(1, int(self._pil.height * base * self._zoom))
-        img = self._pil.resize((w, h), Image.BILINEAR)
+        base = self._fit_scale() * self._zoom
+        w, h = self.winfo_width(), self.winfo_height()
+        sw, sh = w / base, h / base          # source rect size
+        x0 = max(0.0, self._cx - sw / 2.0)
+        y0 = max(0.0, self._cy - sh / 2.0)
+        x1 = min(self._pil.width, x0 + sw)
+        y1 = min(self._pil.height, y0 + sh)
+        if x1 <= x0 or y1 <= y0:
+            return
+        crop = self._pil.crop((int(x0), int(y0), int(x1), int(y1)))
+        img = crop.resize((w, h), Image.LANCZOS)
         self._photo = ImageTk.PhotoImage(img)
         self.create_image(0, 0, image=self._photo, anchor="nw")
 
@@ -274,8 +346,17 @@ class AltFrame:
         self.type_cb.pack(side="left")
         self.type_cb.bind("<<ComboboxSelected>>", self._reload)
         self.type_cb.bind("<FocusOut>", self._reload)
+        self.collapse_btn = tk.Button(top, text="collapse", fg=ACCENT,
+                                      bg=BG, activebackground=BG,
+                                      relief="flat",
+                                      command=self._toggle_collapse)
+        self.collapse_btn.pack(side="right", padx=(6, 0))
+        tk.Button(top, text="reset defaults", fg=ACCENT, bg=BG,
+                  activebackground=BG, relief="flat",
+                  command=self.reset_defaults).pack(side="right", padx=(6, 0))
         tk.Button(top, text="remove", fg=BAD, bg=BG, activebackground=BG,
                   relief="flat", command=on_remove).pack(side="right")
+        self._collapsed = False
         self.info = tk.Label(self.frame, text="", bg=BG, fg=MUTED,
                              wraplength=650, justify="left")
         self.info.pack(fill="x", pady=(2, 4))
@@ -284,10 +365,36 @@ class AltFrame:
         self.common_box = tk.Frame(self.frame, bg=BG)
         self.custom_box = tk.Frame(self.frame, bg=BG)
         self._custom_rows = []
-        add_custom = tk.Button(self.frame, text="+ custom param", fg=ACCENT,
-                               bg=BG, activebackground=BG, relief="flat",
-                               command=self._add_custom)
-        add_custom.pack(anchor="w", pady=(4, 0))
+        self.add_custom_btn = tk.Button(
+            self.frame, text="+ custom param", fg=ACCENT, bg=BG,
+            activebackground=BG, relief="flat", command=self._add_custom)
+        self.add_custom_btn.pack(anchor="w", pady=(4, 0))
+        self._reload()
+
+    def _toggle_collapse(self):
+        """Hide or show the parameter area to keep long pipelines readable."""
+        self._collapsed = not self._collapsed
+        if self._collapsed:
+            for w in (self.info, self.params_box, self.common_box,
+                      self.custom_box, self.add_custom_btn):
+                w.pack_forget()
+            self.collapse_btn.configure(text="expand")
+        else:
+            self.info.pack(fill="x", pady=(2, 4))
+            self.params_box.pack(fill="x")
+            self.common_box.pack(fill="x")
+            self.custom_box.pack(fill="x")
+            self.add_custom_btn.pack(anchor="w", pady=(4, 0))
+            self.collapse_btn.configure(text="collapse")
+
+    def reset_defaults(self):
+        """Discard all values, custom params, and presets for this filter,
+        restoring the installed PDAL's documented defaults."""
+        for w in self.custom_box.winfo_children():
+            w.destroy()
+        self._custom_rows = []
+        self.preset_params = {}
+        self._loaded_type = None  # force a rebuild from defaults
         self._reload()
 
     def _add_custom(self):
@@ -306,6 +413,7 @@ class AltFrame:
         presets = self.preset_params
         self.preset_params = {}
         stage = self.type_var.get().strip()
+        self.frame.configure(text=f"alternative filter: {stage or '(unnamed)'}")
         for w in self.params_box.winfo_children():
             w.destroy()
         for w in self.common_box.winfo_children():
@@ -375,7 +483,8 @@ class AltFrame:
 class StepFrame:
     """One pipeline step with one or more alternatives."""
 
-    def __init__(self, master, app, on_remove, sid, alts=None):
+    def __init__(self, master, app, on_remove, sid, alts=None,
+                 on_move=None):
         self.app = app
         self.frame = tk.LabelFrame(master, bg=BG2, fg=FG, text=f"step: {sid}",
                                    padx=8, pady=6)
@@ -390,6 +499,17 @@ class StepFrame:
         tk.Button(top, text="+ alternative", fg=ACCENT, bg=BG2,
                   activebackground=BG2, relief="flat",
                   command=self.add_alt).pack(side="right")
+        tk.Button(top, text="+ skip", fg=ACCENT, bg=BG2,
+                  activebackground=BG2, relief="flat",
+                  command=self.add_skip).pack(side="right", padx=(6, 0))
+        if on_move is not None:
+            tk.Button(top, text="up", fg=ACCENT, bg=BG2, activebackground=BG2,
+                      relief="flat",
+                      command=lambda: on_move(-1)).pack(side="right",
+                                                         padx=(6, 0))
+            tk.Button(top, text="down", fg=ACCENT, bg=BG2,
+                      activebackground=BG2, relief="flat",
+                      command=lambda: on_move(1)).pack(side="right")
         tk.Button(top, text="remove step", fg=BAD, bg=BG2,
                   activebackground=BG2, relief="flat",
                   command=on_remove).pack(side="right")
@@ -397,13 +517,26 @@ class StepFrame:
         self.alts_box = tk.Frame(self.frame, bg=BG2)
         self.alts_box.pack(fill="x", pady=(6, 0))
         for a in (alts or [{"type": "filters.outlier"}]):
-            self.add_alt(a.get("type"), a.get("params"))
+            if (a.get("type") or "").strip():
+                self.add_alt(a.get("type"), a.get("params"))
+            else:
+                self.add_skip()
 
     def add_alt(self, ftype=None, preset=None):
         alt = AltFrame(self.alts_box, self.app,
                        on_remove=lambda: self.remove_alt(alt),
                        ftype=ftype or "filters.outlier",
                        preset_params=preset)
+        alt.frame.pack(fill="x", pady=4)
+        self.alts.append(alt)
+        self.app.update_combo_count()
+
+    def add_skip(self):
+        """Add a 'no filter at this step' alternative, so the grid can
+        test the step's inclusion (e.g. with vs without an outlier
+        filter)."""
+        alt = SkipAlt(self.alts_box, self.app,
+                      on_remove=lambda: self.remove_alt(alt))
         alt.frame.pack(fill="x", pady=4)
         self.alts.append(alt)
         self.app.update_combo_count()
@@ -415,9 +548,27 @@ class StepFrame:
 
     def collect(self):
         alts = [a.collect() for a in self.alts]
-        alts = [a for a in alts if a.get("type")]
+        # keep skip alternatives (type "") - they are grid options too
         return {"id": self.id_var.get().strip() or "step",
                 "alternatives": alts} if alts else None
+
+
+class SkipAlt:
+    """A 'no filter here' alternative: this step contributes nothing."""
+
+    def __init__(self, master, app, on_remove):
+        self.app = app
+        self.frame = tk.LabelFrame(master, bg=BG, fg=MUTED,
+                                   text="skip", padx=6, pady=4)
+        row = tk.Frame(self.frame, bg=BG)
+        row.pack(fill="x")
+        tk.Label(row, text="skip - no filter at this step", bg=BG,
+                 fg=MUTED).pack(side="left")
+        tk.Button(row, text="remove", fg=BAD, bg=BG, activebackground=BG,
+                  relief="flat", command=on_remove).pack(side="right")
+
+    def collect(self):
+        return {"type": "", "params": {}}
 
 
 EXAMPLE_STEPS = [
@@ -607,10 +758,23 @@ class BuildPanel(tk.Frame):
         sid = sid or f"step{len(self.steps) + 1}"
         step = StepFrame(self.steps_host, self.app,
                          on_remove=lambda: self.remove_step(step),
+                         on_move=lambda d: self.move_step(step, d),
                          sid=sid, alts=alts)
         step.frame.pack(fill="x", pady=6)
         self.steps.append(step)
         self.app.update_combo_count()
+
+    def move_step(self, step, delta):
+        """Move a step up (-1) or down (+1) in the pipeline order."""
+        i = self.steps.index(step)
+        j = i + delta
+        if j < 0 or j >= len(self.steps):
+            return
+        self.steps[i], self.steps[j] = self.steps[j], self.steps[i]
+        for s in self.steps:
+            s.frame.pack_forget()
+        for s in self.steps:
+            s.frame.pack(fill="x", pady=6)
 
     def remove_step(self, step):
         step.frame.destroy()
@@ -798,8 +962,11 @@ class ResultsPanel(tk.Frame):
         sb.pack(side="left", fill="y")
         right = tk.Frame(body, bg=BG)
         right.pack(side="left", fill="both", expand=True, padx=(12, 0))
-        self.thumb = tk.Label(right, bg=CANVAS_BG, width=54, height=30)
-        self.thumb.pack(pady=(0, 8))
+        self.preview_lbl = tk.Label(right, text="select a run to preview",
+                                    bg=BG, fg=MUTED, anchor="w")
+        self.preview_lbl.pack(fill="x", pady=(0, 4))
+        self.preview = ZoomableImage(right)
+        self.preview.pack(fill="both", expand=True, pady=(0, 8))
         btns = tk.Frame(right, bg=BG)
         btns.pack()
         tk.Button(btns, text="open detail", fg=ACCENT, bg=BG,
@@ -834,18 +1001,17 @@ class ResultsPanel(tk.Frame):
         return self.tree.selection()
 
     def _preview(self):
+        """Update the preview to whatever run is selected."""
         sel = self._selected()
         if not sel:
             return
         h = sel[0]
+        entry = (self.tree.item(h, "values")[0] if self.tree.exists(h)
+                 else h)
+        self.preview_lbl.configure(text=f"top-down: {entry}")
         path = os.path.join(M.run_dir(self.sweep_id, h), "topdown.png")
-        if not os.path.exists(path):
-            return
-        img = Image.open(path)
-        img.thumbnail((360, 360))
-        self._photo = ImageTk.PhotoImage(img)
-        self.thumb.configure(image=self._photo, width=img.width,
-                              height=img.height)
+        self.preview.set_image_pil(
+            Image.open(path) if os.path.exists(path) else None)
 
     def _open_detail(self):
         sel = self._selected()
@@ -924,7 +1090,7 @@ class DetailPanel(tk.Frame):
             return
         for w in self.nametowidget(tab).winfo_children():
             if isinstance(w, ZoomableImage):
-                w._redraw()
+                w._render()
 
     def _load_file(self, name):
         path = os.path.join(self.rdir, name)
@@ -1085,7 +1251,7 @@ class ComparePanel(tk.Frame):
             return
         for w in self.nametowidget(tab).winfo_children():
             if isinstance(w, ZoomableImage):
-                w._redraw()
+                w._render()
 
     def reload(self):
         for title in ("top-down", "DTM", "canopy height"):

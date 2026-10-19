@@ -36,8 +36,16 @@ from .registry import GROUND_FILTERS, HAG_FILTERS, coerce_value, short_name
 
 
 def _expand_alternative(alt):
-    """Yield (filter_type, concrete_params, label) for one alternative."""
-    ftype = alt["type"]
+    """Yield (filter_type, concrete_params, label) for one alternative.
+
+    An alternative with an empty type is a 'skip': this step contributes
+    no filter for that grid option (e.g. testing with vs without an
+    outlier filter).
+    """
+    ftype = (alt.get("type") or "").strip()
+    if not ftype:
+        yield "", {}, "skip"
+        return
     raw = alt.get("params", {}) or {}
     fixed = {}
     varying = {}
@@ -113,6 +121,8 @@ def build_pipeline(spec, combo):
     """Build the PDAL JSON pipeline (list of stages) for one combination."""
     stages = [{"type": "readers.las", "filename": spec["input"]}]
     for _sid, ftype, params, _label in combo["steps"]:
+        if not ftype:
+            continue  # skip alternative: no filter at this step
         stage = {"type": ftype}
         for name, value in params.items():
             # PDAL rejects where_merge without where; drop the invalid pair
