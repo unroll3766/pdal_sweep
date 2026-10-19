@@ -1,0 +1,16 @@
+# python
+__pycache__/
+*.py[cod]
+
+# sweep results (can be large; a fresh clone starts with none)
+sweeps/
+
+# point cloud and raster data are user-owned products and far too large
+# for git - force-add specific small files if ever needed
+*.las
+*.laz
+*.tif
+*.npz
+
+# worker output
+worker.log

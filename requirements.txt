@@ -1,0 +1,7 @@
+# PDAL Sweep runs inside a conda environment providing PDAL itself:
+#   conda create -n pdal -c conda-forge python pdal numpy matplotlib pillow
+# The 'pdal' conda package provides both the CLI and the python bindings.
+# Tkinter ships with python (on Debian/Ubuntu it is the python3-tk package).
+numpy
+matplotlib
+pillow

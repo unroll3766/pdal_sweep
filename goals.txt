@@ -1,0 +1,11 @@
+Goal: grid search PDAL parameters and visually examine their impact on point cloud quality.
+
+Features:
+User proposes a pipeline with fixed and varied elements.
+For instance, noise filter -> ground classification -> height above ground.
+The user can interactively select the parameters for any given step. 
+The user should be able to indicate that multiple options are valid for a given step (e.g. a SMRF filter or a CSF filter for ground classification)
+Given, an input point cloud, run a grid search on the varying elements while fixing everything else.
+The user should have an option to select which output(s) are generated: point cloud render (cross sections, top down, etc.), saved point cloud, canopy height map, DTM, etc.
+Bonus:
+Create viewers for each ouput that allow the user to compare two searches side by side
