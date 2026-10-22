@@ -65,9 +65,11 @@ present; use the browse button to pick any LAS/LAZ file.
    lists all runs with point counts and ground fraction; select one (or
    ctrl-click two) to open the detail view or the side-by-side comparison.
 4. **Detail**: tabs for top-down, cross-section (strip position/width
-   controls, rendered off the UI thread), DTM and canopy height, a class
-   table with per-class output vs input counts, warnings, and an "open
-   folder" button for the run's files.
+   controls, rendered off the UI thread), a 3D scatter view
+   (drag-to-rotate, one show/hide toggle per classification class, a
+   point-count budget for interactive speed), DTM and canopy height, a
+   class table with per-class output vs input counts, warnings, and an
+   "open folder" button for the run's files.
 5. **Compare**: any two runs side by side across the same output tabs,
    with a synced cross-section slider.
 

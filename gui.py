@@ -1080,6 +1080,147 @@ class ResultsPanel(tk.Frame):
             self.tree.item(h, tags=(mark,) if mark else ())
 
 
+class Viewer3D(tk.Frame):
+    """Interactive 3D scatter of a run's decimated points.
+
+    mplot3d embedded in Tkinter: left-drag rotates, right-drag zooms.
+    One toggle per classification class. Points are decimated to a
+    budget because mplot3d rotation is only interactive below a few
+    hundred thousand points.
+    """
+
+    DEFAULT_BUDGET = 50000
+
+    def __init__(self, master, app, data=None):
+        super().__init__(master, bg=BG)
+        self.app = app
+        self.full = None          # full point arrays, kept for re-budget
+        self.artists = {}         # class -> scatter artist
+        self.checks = {}          # class -> BooleanVar
+        self._pending_render = None
+        ctrl = tk.Frame(self, bg=BG)
+        ctrl.pack(fill="x", pady=(0, 2))
+        tk.Label(ctrl, text="max points", bg=BG, fg=MUTED).pack(
+            side="left", padx=(2, 4))
+        self.budget_var = tk.StringVar(value=f"{self.DEFAULT_BUDGET:,}")
+        self.budget_var.trace_add("write", lambda *_: self._render())
+        tk.Entry(ctrl, textvariable=self.budget_var, width=9, bg=BG2,
+                 fg=FG, insertbackground=FG, relief="flat",
+                 highlightthickness=1, highlightbackground="#333a48").pack(
+            side="left")
+        self.hint = tk.Label(ctrl, bg=BG, fg=MUTED,
+                             text="drag to rotate, right-drag to zoom")
+        self.hint.pack(side="left", padx=14)
+        tk.Button(ctrl, text="reset view", fg=ACCENT, bg=BG,
+                  activebackground=BG, relief="flat",
+                  command=lambda: self._reset_view()).pack(side="right")
+        self.classbar = tk.Frame(self, bg=BG)
+        self.classbar.pack(fill="x")
+        self.plot_host = tk.Frame(self, bg=CANVAS_BG)
+        self.plot_host.pack(fill="both", expand=True)
+        if data is not None:
+            self.set_data(data)
+
+    # ------------------------------------------------------------ data flow
+
+    def set_data(self, data):
+        """Store the full point arrays, decimate to the budget and draw."""
+        self.full = data
+        data = self._decimate(data)
+        for w in self.classbar.winfo_children():
+            w.destroy()
+        self.artists.clear()
+        self.checks.clear()
+        if self.plot_host.winfo_children():
+            self.plot_host.winfo_children()[0].destroy()
+
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        fig = Figure(figsize=(7, 6), dpi=110, facecolor=CANVAS_BG)
+        ax = fig.add_subplot(projection="3d", facecolor=CANVAS_BG)
+        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+            axis.set_pane_color((0.07, 0.09, 0.12, 1.0))
+            axis.label.set_color(MUTED)
+        ax.tick_params(colors=MUTED, labelsize=7)
+        ax.set_xlabel("X", fontsize=8)
+        ax.set_ylabel("Y", fontsize=8)
+        ax.set_zlabel("Z", fontsize=8)
+        x, y, z = data["X"], data["Y"], data["Z"]
+        c = data["Classification"].astype(int)
+        for cls in sorted(set(c.tolist())):
+            m = c == cls
+            color = O.CLASS_COLORS.get(cls, "#7f8c8d")
+            self.artists[cls] = ax.scatter(
+                x[m], y[m], z[m], s=0.7, c=color, linewidths=0,
+                depthshade=True)
+            var = tk.BooleanVar(value=True)
+            var.trace_add("write", lambda *_a, _cl=cls: self._apply(_cl))
+            self.checks[cls] = var
+            name = O.CLASS_NAMES.get(cls, f"class {cls}")
+            tk.Label(self.classbar, text="\u25a0", fg=color, bg=BG).pack(
+                side="left", padx=(8, 0))
+            tk.Checkbutton(
+                self.classbar, text=f"{name} ({int(m.sum()):,})",
+                variable=var, bg=BG, fg=FG, activebackground=BG,
+                selectcolor=BG2).pack(side="left")
+        xr = float(x.max() - x.min()) or 1.0
+        yr = float(y.max() - y.min()) or 1.0
+        zr = float(z.max() - z.min()) or 1.0
+        ax.set_box_aspect((xr, yr, zr * 3))
+        self._ax = ax
+        self._fig = fig
+        self.canvas = FigureCanvasTkAgg(fig, master=self.plot_host)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def _reset_view(self):
+        if getattr(self, "_ax", None) is not None:
+            self._ax.view_init(elev=30, azim=-60)
+            self.canvas.draw_idle()
+
+    def _apply(self, cls):
+        """One class's checkbox changed: toggle its artist."""
+        if cls in self.artists:
+            self.artists[cls].set_visible(bool(self.checks[cls].get()))
+            self.canvas.draw_idle()
+
+    def _budget(self):
+        try:
+            return max(10000, min(500000,
+                                  int(self.budget_var.get().replace(",", ""))))
+        except ValueError:
+            return self.DEFAULT_BUDGET
+
+    def _decimate(self, data):
+        import numpy as np
+        budget = self._budget()
+        n = len(data["X"])
+        if n > budget:
+            idx = np.linspace(0, n - 1, budget).astype(int)
+            data = {k: v[idx] for k, v in data.items()}
+        return data
+
+    def _render(self):
+        """Debounced budget rebuild: every keystroke in the entry fires
+        this; coalesce into one rebuild after typing settles."""
+        if self._pending_render is not None:
+            self.after_cancel(self._pending_render)
+        self._pending_render = self.after(400, self._render_now)
+
+    def _render_now(self):
+        """Re-decimate and redraw, keeping the current view angles."""
+        self._pending_render = None
+        if self.full is None:
+            return
+        elev = azim = None
+        if getattr(self, "_ax", None) is not None:
+            elev, azim = self._ax.elev, self._ax.azim
+        self.set_data(self.full)
+        if elev is not None:
+            self._ax.view_init(elev=elev, azim=azim)
+            self.canvas.draw_idle()
+
+
 class DetailPanel(tk.Frame):
     def __init__(self, master, app, sweep_id, run_hash):
         super().__init__(master, bg=BG)
@@ -1148,6 +1289,7 @@ class DetailPanel(tk.Frame):
         self.views = {}
         self._add_tab("top-down", self._load_file("topdown.png"))
         self._xsection_tab()
+        self._3d_tab()
         self._add_tab("DTM", self._load_file("dtm.png"))
         self._add_tab("canopy height", self._load_file("chm.png"))
 
@@ -1172,6 +1314,35 @@ class DetailPanel(tk.Frame):
         for w in self.nametowidget(tab).winfo_children():
             if isinstance(w, ZoomableImage):
                 w._render()
+
+    def _3d_tab(self):
+        """3D scatter tab: loads the run's cached points (reusing the
+        cross-section's cache if it is already in memory)."""
+        f = tk.Frame(self.nb, bg=BG)
+        self.nb.add(f, text="3D view")
+        self.viewer3d = Viewer3D(f, self.app)
+        self.viewer3d.pack(fill="both", expand=True)
+        if not os.path.exists(os.path.join(self.rdir,
+                                           "render_points.npz")):
+            tk.Label(f, text="no cached points for this run", bg=BG,
+                     fg=MUTED).pack(padx=20, pady=20)
+            return
+        cache = self._cache if self._cache is not None else self.rdir
+
+        def job():
+            return cache if isinstance(cache, dict) else O.load_cache(cache)
+
+        def done(data, err):
+            if err is None and data:
+                self._cache = data
+                self.viewer3d.set_data(data)
+            else:
+                tk.Label(f, text=f"could not load points: {err}", bg=BG,
+                         fg=BAD).pack(padx=20, pady=20)
+
+        # separate job owner from the cross-section's: a new submit cancels
+        # the owner's pending job, and both tabs load the cache at build
+        self.app.submit(self.viewer3d, job, done)
 
     def _load_file(self, name):
         path = os.path.join(self.rdir, name)
