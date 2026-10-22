@@ -5,7 +5,7 @@ Each combination runs as an independent unit in a worker process:
   2. decimate the result and cache points for rendering
   3. generate selected outputs: renders, DTM, CHM
 
-A status.json in the sweep directory tracks progress for the web UI.
+A status.json in the sweep directory tracks progress for the GUI.
 """
 
 import json
@@ -102,8 +102,8 @@ def run_combo(spec, combo, sweep_dir):
         return {"hash": combo["hash"], "status": "cached"}
 
     # point cloud export: LAZ by default, LAS via spec point_format
-    ext = "laz" if str(spec.get("point_format", "laz")).lower() == "laz" \
-        else "las"
+    fmt = str(spec.get("point_format", "laz")).strip().lower()
+    ext = "laz" if fmt == "laz" else "las"
     points_las = os.path.join(run_dir, f"{combo['hash']}_points.{ext}")
     stages = build_pipeline(spec, combo)
     writer = {"type": "writers.las", "filename": points_las}

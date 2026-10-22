@@ -711,7 +711,7 @@ class BuildPanel(tk.Frame):
         self.budget_var.set(str(spec.get("render_budget_points",
                                          2000000)))
         self.format_var.set(
-            str(spec.get("point_format", "laz")).lower() or "laz")
+            str(spec.get("point_format", "laz")).strip().lower() or "laz")
         for key, var in self.out_vars.items():
             var.set(bool(spec.get("outputs", {}).get(key, True)))
         for s in self.steps:

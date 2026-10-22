@@ -18,6 +18,13 @@ conda create -n pdal -c conda-forge python pdal numpy matplotlib pillow
 conda activate pdal
 ```
 
+If the env ships PDAL plugins built against libraries that are no longer
+installed (seen with conda-forge `libpdal-hdf`/`libpdal-icebridge` vs
+HDF5 1.14.6), the app automatically points `PDAL_DRIVER_PATH` at a temp
+directory of symlinks to the plugins that actually load, silencing the
+per-run load errors. Setting `PDAL_DRIVER_PATH` yourself disables this.
+
+
 ## Run
 
 ```bash
