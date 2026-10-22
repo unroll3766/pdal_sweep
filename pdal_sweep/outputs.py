@@ -148,20 +148,25 @@ def render_xsection(data, frac=0.5, width=2.0):
 
 
 def render_tif_png(tif_path, cmap_name="terrain", label="elevation"):
-    """Read a single-band float GeoTIFF and return PNG bytes (normalized)."""
+    """Read a single-band float GeoTIFF and return PNG bytes.
+
+    Percentile-stretched for display, but the colorbar shows the true
+    cell values, not normalized 0-1.
+    """
     from PIL import Image
     img = Image.open(tif_path)
     a = np.asarray(img, dtype=np.float64)
-    a[a < -1e30] = np.nan
+    # PDAL's writers.gdal nodata is -9999; GDAL defaults can be ~-1e30.
+    a[a <= -9998.0] = np.nan
     lo, hi = np.nanpercentile(a, 2), np.nanpercentile(a, 98)
     if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
         lo = float(np.nanmin(a)) if np.isfinite(np.nanmin(a)) else 0.0
         hi = lo + 1.0
-    norm = np.clip((a - lo) / max(hi - lo, 1e-9), 0, 1)
     fig, ax = _new_fig(8, 8)
-    im = ax.imshow(norm, cmap=cmap_name, origin="upper")
+    im = ax.imshow(a, cmap=cmap_name, origin="upper", vmin=lo, vmax=hi)
     fig.colorbar(im, ax=ax, label=label, shrink=0.8)
-    ax.set_title(os.path.basename(tif_path))
+    ax.set_title(f"{os.path.basename(tif_path)}  "
+                 f"({lo:.2f} to {hi:.2f}, percentile stretch)")
     ax.set_xticks([]); ax.set_yticks([])
     fig.tight_layout()
     buf = io.BytesIO()

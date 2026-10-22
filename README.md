@@ -48,7 +48,7 @@ present; use the browse button to pick any LAS/LAZ file.
    into a grid axis. A step may also have several *alternative filters*
    (e.g. SMRF *or* CSF). The cartesian product over all alternatives and
    vary-lists is the grid; the live counter shows how many combinations it
-   expands to (max 48 per sweep).
+   expands to.
 2. **Outputs** per combination are selectable:
    - saved point cloud (`points.las`, with `HeightAboveGround` as extra dim
      when a HAG step is present)

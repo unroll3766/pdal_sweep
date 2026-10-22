@@ -17,7 +17,6 @@ from .spec import expand_spec
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SWEEPS_DIR = os.path.join(PROJECT_DIR, "sweeps")
-MAX_COMBOS = 48
 
 PDAL_BIN = os.environ.get("PDAL_BIN") or os.path.join(
     os.path.dirname(sys.executable), "pdal")
@@ -151,6 +150,48 @@ def read_meta(sweep_id, run_hash):
     if isinstance(cc, dict):
         meta["class_counts"] = {int(k): v for k, v in cc.items()}
     return meta
+
+
+# ------------------------------------------------------------------- ratings
+
+def read_ratings(sweep_id):
+    """Run hash -> 'good' or 'bad', from the sweep's ratings.json."""
+    d = sweep_path(sweep_id)
+    p = os.path.join(d, "ratings.json") if d else None
+    if not p or not os.path.exists(p):
+        return {}
+    try:
+        with open(p) as f:
+            ratings = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(ratings, dict):
+        return {}
+    return {k: v for k, v in ratings.items() if v in ("good", "bad")}
+
+
+def set_rating(sweep_id, run_hash, rating):
+    """Persist a run's evaluation. rating is 'good', 'bad', or None to
+    clear. Returns True on success."""
+    d = sweep_path(sweep_id)
+    if d is None:
+        return False
+    if rating is not None and rating not in ("good", "bad"):
+        return False
+    ratings = read_ratings(sweep_id)
+    if rating is None:
+        ratings.pop(run_hash, None)
+    else:
+        ratings[run_hash] = rating
+    p = os.path.join(d, "ratings.json")
+    tmp = p + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(ratings, f, indent=1)
+        os.replace(tmp, p)
+    except OSError:
+        return False
+    return True
 
 
 def get_status(sweep_id):
@@ -386,9 +427,6 @@ def create_sweep(spec):
         return None, None, f"could not build grid: {e}"
     if not combos:
         return None, None, "the grid is empty"
-    if len(combos) > MAX_COMBOS:
-        return None, None, (f"{len(combos)} combinations is too many "
-                            f"(max {MAX_COMBOS})")
 
     warnings = []
     if spec.get("outputs", {}).get("chm", True):

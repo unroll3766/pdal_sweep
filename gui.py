@@ -227,6 +227,9 @@ class ParamRow:
         name.bind("<Leave>", lambda e: app.set_help(""))
         self.value_var = tk.StringVar()
         self.bool_var = tk.BooleanVar()
+        # typing into a value (e.g. editing a vary list) changes the grid
+        self.value_var.trace_add(
+            "write", lambda *_: self.app.update_combo_count())
         self._preset_value(preset, pdef)
         vary = tk.Checkbutton(self.frame, variable=self.vary_var, text="vary",
                               bg=BG, activebackground=BG, fg=MUTED,
@@ -303,6 +306,11 @@ class CustomRow:
         self.name_var = tk.StringVar(value=name)
         self.value_var = tk.StringVar(value=value)
         self.vary_var = tk.BooleanVar(value=vary)
+        # editing name or value changes the collected grid
+        self.name_var.trace_add(
+            "write", lambda *_: app.update_combo_count())
+        self.value_var.trace_add(
+            "write", lambda *_: app.update_combo_count())
         name = tk.Entry(self.frame, textvariable=self.name_var, width=14,
                         bg=BG2, fg=FG, insertbackground=FG, relief="flat",
                         highlightthickness=1, highlightbackground="#333a48")
@@ -401,8 +409,6 @@ class AltFrame:
         row = CustomRow(self.custom_box, self.app)
         row.frame.pack(fill="x", pady=1)
         self._custom_rows.append(row)
-        for w in (row.name_var, row.value_var):
-            w.trace_add("write", lambda *_: self.app.update_combo_count())
 
     def _reload(self, *_a):
         if self.type_cb.get() == getattr(self, "_loaded_type", object()):
@@ -804,8 +810,10 @@ class BuildPanel(tk.Frame):
     def update_count(self):
         try:
             n = len(expand_spec(self.collect()))
-            self.count_lbl.configure(text=f"{n} combinations in the grid",
-                                     fg=BAD if n > M.MAX_COMBOS else MUTED)
+            note = "  (large grid - each run stores its outputs on disk)" \
+                if n > 200 else ""
+            self.count_lbl.configure(
+                text=f"{n} combinations in the grid{note}", fg=MUTED)
         except Exception:
             self.count_lbl.configure(text="invalid grid", fg=BAD)
 
@@ -949,13 +957,15 @@ class ResultsPanel(tk.Frame):
                 anchor="w", padx=10)
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=10, pady=6)
-        cols = ("label", "points", "ground", "secs", "state")
+        cols = ("label", "points", "ground", "secs", "state", "mark")
         self.tree = ttk.Treeview(body, columns=cols, show="headings",
                                  selectmode="extended", height=16)
-        widths = (420, 90, 90, 60, 80)
+        widths = (420, 90, 90, 60, 80, 60)
         for c, w in zip(cols, widths):
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor="w")
+        self.tree.tag_configure("good", foreground=GOOD)
+        self.tree.tag_configure("bad", foreground=BAD)
         self.tree.pack(side="left", fill="y")
         sb = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
@@ -980,9 +990,26 @@ class ResultsPanel(tk.Frame):
         tk.Button(btns, text="compare selected (2)", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
                   command=self._compare).pack(side="left", padx=4)
+        tk.Button(btns, text="mark good", fg=GOOD, bg=BG,
+                  activebackground=BG, relief="flat",
+                  command=lambda: self._mark("good")).pack(
+            side="left", padx=4)
+        tk.Button(btns, text="mark bad", fg=BAD, bg=BG,
+                  activebackground=BG, relief="flat",
+                  command=lambda: self._mark("bad")).pack(
+            side="left", padx=4)
+        tk.Button(btns, text="clear mark", fg=MUTED, bg=BG,
+                  activebackground=BG, relief="flat",
+                  command=lambda: self._mark(None)).pack(
+            side="left", padx=4)
         self.tree.bind("<<TreeviewSelect>>", lambda e: self._preview())
         self.tree.bind("<Double-1>", lambda e: self._open_detail())
+        # keyboard marking while the list has focus
+        self.tree.bind("g", lambda e: self._mark("good"))
+        self.tree.bind("b", lambda e: self._mark("bad"))
+        self.tree.bind("c", lambda e: self._mark(None))
         self.runs = []
+        ratings = M.read_ratings(sweep_id)
         for h, entry in sorted((status.get("combos") or {}).items(),
                                key=lambda kv: kv[1].get("label", "")):
             meta = M.read_meta(sweep_id, h) or {}
@@ -992,10 +1019,12 @@ class ResultsPanel(tk.Frame):
             ground = ""
             if pts and cc.get(2):
                 ground = f"{100 * cc[2] / pts:.1f}%"
+            mark = ratings.get(h, "")
             self.tree.insert(
-                "", "end", iid=h,
+                "", "end", iid=h, tags=(mark,) if mark else (),
                 values=(entry.get("label", h), f"{pts:,}" if pts else "",
-                        ground, meta.get("seconds", ""), entry.get("state", "")))
+                        ground, meta.get("seconds", ""),
+                        entry.get("state", ""), mark))
 
     def _selected(self):
         return self.tree.selection()
@@ -1025,6 +1054,20 @@ class ResultsPanel(tk.Frame):
             return
         self.app.show_compare(self.sweep_id, sel[0], sel[1])
 
+    def _mark(self, rating):
+        """Persist good/bad/clear for every selected run, update the rows."""
+        sel = list(self._selected())
+        if not sel:
+            messagebox.showinfo("mark", "select at least one run")
+            return
+        for h in sel:
+            if not M.set_rating(self.sweep_id, h, rating):
+                messagebox.showerror("mark", "could not save rating")
+                return
+            mark = rating or ""
+            self.tree.set(h, "mark", mark)
+            self.tree.item(h, tags=(mark,) if mark else ())
+
 
 class DetailPanel(tk.Frame):
     def __init__(self, master, app, sweep_id, run_hash):
@@ -1045,6 +1088,19 @@ class DetailPanel(tk.Frame):
                   activebackground=BG, relief="flat",
                   command=lambda: subprocess.Popen(["xdg-open", self.rdir])
                   ).pack(side="right")
+        mark_frame = tk.Frame(head, bg=BG)
+        mark_frame.pack(side="right", padx=(0, 12))
+        self._rating = (M.read_ratings(sweep_id) or {}).get(run_hash)
+        self.rating_lbl = tk.Label(mark_frame, bg=BG, fg=MUTED)
+        self.rating_lbl.pack(side="left", padx=(0, 6))
+        for text, color, rating in (("good", GOOD, "good"),
+                                    ("bad", BAD, "bad"),
+                                    ("clear", MUTED, None)):
+            tk.Button(mark_frame, text=text, fg=color, bg=BG,
+                      activebackground=BG, relief="flat",
+                      command=lambda r=rating: self._mark(r)).pack(
+                side="left", padx=2)
+        self._sync_rating_lbl()
         warns = (meta.get("warnings") or []) + (status.get("sweep_warnings")
                                                 or [])
         if warns:
@@ -1083,6 +1139,20 @@ class DetailPanel(tk.Frame):
         self._xsection_tab()
         self._add_tab("DTM", self._load_file("dtm.png"))
         self._add_tab("canopy height", self._load_file("chm.png"))
+
+    def _sync_rating_lbl(self):
+        self.rating_lbl.configure(
+            text=f"marked: {self._rating}" if self._rating
+            else "not marked yet",
+            fg={"good": GOOD, "bad": BAD}.get(self._rating, MUTED))
+
+    def _mark(self, rating):
+        """Set this run's rating and persist it."""
+        if not M.set_rating(self.sweep_id, self.run_hash, rating):
+            messagebox.showerror("mark", "could not save rating")
+            return
+        self._rating = rating
+        self._sync_rating_lbl()
 
     def _tab_changed(self, _e=None):
         tab = self.nb.select()
