@@ -104,7 +104,7 @@ def run_combo(spec, combo, sweep_dir):
     # point cloud export: LAZ by default, LAS via spec point_format
     ext = "laz" if str(spec.get("point_format", "laz")).lower() == "laz" \
         else "las"
-    points_las = os.path.join(run_dir, f"points.{ext}")
+    points_las = os.path.join(run_dir, f"{combo['hash']}_points.{ext}")
     stages = build_pipeline(spec, combo)
     writer = {"type": "writers.las", "filename": points_las}
     if ext == "laz":
@@ -149,42 +149,47 @@ def run_combo(spec, combo, sweep_dir):
     }
 
     # renders
+    rh = combo["hash"]
     if data is not None:
         if out.get("topdown", True):
-            with open(os.path.join(run_dir, "topdown.png"), "wb") as f:
+            name = f"{rh}_topdown.png"
+            with open(os.path.join(run_dir, name), "wb") as f:
                 f.write(O.render_topdown(data))
-            result["outputs"]["topdown"] = "topdown.png"
+            result["outputs"]["topdown"] = name
         if out.get("crosssection", True):
-            with open(os.path.join(run_dir, "xsection.png"), "wb") as f:
+            name = f"{rh}_xsection.png"
+            with open(os.path.join(run_dir, name), "wb") as f:
                 f.write(O.render_xsection(data))
-            result["outputs"]["xsection"] = "xsection.png"
+            result["outputs"]["xsection"] = name
 
     # DTM: ground points (or all points if no ground classifier), idw
     res = float(spec.get("raster_resolution", 0.25))
     if out.get("dtm", True):
+        dtm_tif = os.path.join(run_dir, f"{rh}_dtm.tif")
         dtm_stages = [{"type": "readers.las", "filename": points_las}]
         if flags["has_ground"]:
             dtm_stages.append({"type": "filters.range",
                                "limits": "Classification[2:2]"})
         dtm_stages.append({"type": "writers.gdal",
-                           "filename": os.path.join(run_dir, "dtm.tif"),
+                           "filename": dtm_tif,
                            "resolution": res, "output_type": "idw",
                            "gdaldriver": "GTiff", "data_type": "float"})
         ok_dtm, err_dtm = _run_pdal_pipeline(dtm_stages)
-        if ok_dtm and os.path.exists(os.path.join(run_dir, "dtm.tif")):
-            result["outputs"]["dtm"] = "dtm.tif"
+        if ok_dtm and os.path.exists(dtm_tif):
+            result["outputs"]["dtm"] = os.path.basename(dtm_tif)
             try:
-                with open(os.path.join(run_dir, "dtm.png"), "wb") as f:
-                    f.write(O.render_tif_png(os.path.join(run_dir, "dtm.tif"),
+                dtm_png = os.path.join(run_dir, f"{rh}_dtm.png")
+                with open(dtm_png, "wb") as f:
+                    f.write(O.render_tif_png(dtm_tif,
                                              "terrain", "Z (DTM)"))
-                result["outputs"]["dtm_preview"] = "dtm.png"
+                result["outputs"]["dtm_preview"] = os.path.basename(dtm_png)
             except Exception as e:
                 result["warnings"] = result.get("warnings", []) + [f"dtm preview failed: {e}"]
         else:
             result["warnings"] = result.get("warnings", []) + [f"dtm failed: {err_dtm}"]
     # CHM: max HeightAboveGround per cell (requires a HAG step)
     if out.get("chm", True):
-        chm_tif = os.path.join(run_dir, "chm.tif")
+        chm_tif = os.path.join(run_dir, f"{rh}_chm.tif")
         if flags["has_hag"]:
             chm_stages = [
                 {"type": "readers.las", "filename": points_las},
@@ -195,11 +200,12 @@ def run_combo(spec, combo, sweep_dir):
             ]
             ok_chm, err_chm = _run_pdal_pipeline(chm_stages)
             if ok_chm and os.path.exists(chm_tif):
-                result["outputs"]["chm"] = "chm.tif"
+                result["outputs"]["chm"] = os.path.basename(chm_tif)
                 try:
-                    with open(os.path.join(run_dir, "chm.png"), "wb") as f:
+                    chm_png = os.path.join(run_dir, f"{rh}_chm.png")
+                    with open(chm_png, "wb") as f:
                         f.write(O.render_tif_png(chm_tif, "viridis", "height above ground"))
-                    result["outputs"]["chm_preview"] = "chm.png"
+                    result["outputs"]["chm_preview"] = os.path.basename(chm_png)
                 except Exception as e:
                     result["warnings"] = result.get("warnings", []) + [
                         f"chm preview failed: {e}"]

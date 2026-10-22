@@ -194,6 +194,58 @@ def set_rating(sweep_id, run_hash, rating):
     return True
 
 
+# ------------------------------------------------------------- batch export
+
+EXPORT_SUBDIRS = {
+    "point_cloud": "points",
+    "dtm": "dtm",
+    "chm": "chm",
+    "topdown": "topdown",
+    "xsection": "xsection",
+}
+
+
+def export_runs(sweep_id, run_hashes, output_keys, zip_path):
+    """Zip the selected output kinds of the given runs.
+
+    The archive gets one subdirectory per output kind (points/, dtm/,
+    chm/, ...); run files keep their hash-prefixed names so runs cannot
+    collide inside a subdirectory. Returns {output_key: file_count}.
+    """
+    import zipfile
+    if sweep_path(sweep_id) is None:
+        raise FileNotFoundError(f"sweep not found: {sweep_id}")
+    keys = [k for k in output_keys if k in EXPORT_SUBDIRS]
+    if not keys:
+        raise ValueError("no valid outputs selected")
+    if not run_hashes:
+        raise ValueError("no runs selected")
+    if os.path.exists(zip_path):
+        raise FileExistsError(zip_path)
+    counts = {k: 0 for k in keys}
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for h in run_hashes:
+            meta = read_meta(sweep_id, h) or {}
+            outs = meta.get("outputs") or {}
+            for k in keys:
+                name = outs.get(k)
+                if not name:
+                    continue
+                p = os.path.join(run_dir(sweep_id, h), name)
+                if not os.path.exists(p):
+                    continue
+                # runs from before the hash prefix must not collide
+                arc = name if name.startswith(h + "_") else f"{h}_{name}"
+                # LAZ is already compressed: storing it keeps the export
+                # fast; deflate still applies to tif/png/las
+                comp = (zipfile.ZIP_STORED if name.endswith(".laz")
+                        else zipfile.ZIP_DEFLATED)
+                zf.write(p, os.path.join(EXPORT_SUBDIRS[k], arc),
+                         compress_type=comp)
+                counts[k] += 1
+    return counts
+
+
 def get_status(sweep_id):
     """Status.json if it exists, else a synthetic 'starting' status built
     from the spec, so the UI works in the gap before the worker writes it."""

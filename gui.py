@@ -9,6 +9,7 @@ separately-spawned worker processes.
 import io
 import json
 import os
+import re
 import subprocess
 import threading
 import tkinter as tk
@@ -952,6 +953,123 @@ class ProgressPanel(tk.Frame):
                              values=(label, pts_txt, ground_txt, state))
 
 
+class ExportDialog(tk.Toplevel):
+    """Batch export: pick a run scope and output kinds, zip to disk.
+
+    The archive is named after the sweep and holds one subdirectory per
+    output kind (points/, dtm/, ...); files keep their run-hash prefixes.
+    """
+
+    OUT_LABELS = (("point_cloud", "point cloud"),
+                  ("dtm", "DTM"),
+                  ("chm", "canopy height map"),
+                  ("topdown", "top-down render"),
+                  ("xsection", "cross-section render"))
+
+    def __init__(self, master, app, sweep_id, runs, selected):
+        super().__init__(master)
+        self.app = app
+        self.sweep_id = sweep_id
+        self.runs = runs            # (hash, entry, meta) tuples
+        self.selected = list(selected)
+        self.title("export results")
+        self.configure(bg=BG)
+        self.transient(master.winfo_toplevel())
+        self.lift()
+
+        tk.Label(self, text="which runs to export", bg=BG, fg=MUTED).pack(
+            anchor="w", padx=12, pady=(12, 2))
+        self.scope_var = tk.StringVar(value="all")
+        for val, label in (("all", "all runs"), ("good", "good runs"),
+                           ("bad", "bad runs"),
+                           ("selected", "runs selected in the list")):
+            tk.Radiobutton(self, text=label, variable=self.scope_var,
+                           value=val, bg=BG, fg=FG, activebackground=BG,
+                           selectcolor=BG2,
+                           command=self._update_count).pack(
+                anchor="w", padx=22)
+
+        tk.Label(self, text="which outputs to include", bg=BG,
+                 fg=MUTED).pack(anchor="w", padx=12, pady=(10, 2))
+        self.out_vars = {}
+        row = tk.Frame(self, bg=BG)
+        row.pack(anchor="w", padx=22)
+        for i, (key, label) in enumerate(self.OUT_LABELS):
+            v = tk.BooleanVar(value=key in ("point_cloud", "dtm", "chm"))
+            self.out_vars[key] = v
+            tk.Checkbutton(row, text=label, variable=v, bg=BG, fg=FG,
+                           activebackground=BG).grid(
+                row=0, column=i, padx=(0, 14), sticky="w")
+
+        self.count_lbl = tk.Label(self, text="", bg=BG, fg=FG)
+        self.count_lbl.pack(anchor="w", padx=12, pady=(10, 2))
+        self.export_btn = tk.Button(
+            self, text="choose destination & export", bg=ACCENT,
+            fg="#0d1117", activebackground=ACCENT, relief="flat",
+            command=self._export)
+        self.export_btn.pack(anchor="e", padx=12, pady=(6, 12))
+        self._update_count()
+
+    def _scope_hashes(self):
+        scope = self.scope_var.get()
+        if scope == "all":
+            return [h for h, _e, _m in self.runs]
+        ratings = M.read_ratings(self.sweep_id)
+        if scope in ("good", "bad"):
+            return [h for h, _e, _m in self.runs
+                    if ratings.get(h) == scope]
+        return list(self.selected)
+
+    def _update_count(self):
+        n = len(self._scope_hashes())
+        self.count_lbl.configure(text=f"{n} run(s) in scope")
+
+    def _export(self):
+        hashes = self._scope_hashes()
+        if not hashes:
+            messagebox.showinfo("export", "no runs in this scope",
+                               parent=self)
+            return
+        keys = [k for k, v in self.out_vars.items() if v.get()]
+        if not keys:
+            messagebox.showinfo("export", "select at least one output",
+                               parent=self)
+            return
+        status = M.get_status(self.sweep_id) or {}
+        name = re.sub(r"[^\w.-]+", "_",
+                      status.get("name") or self.sweep_id).strip("_")
+        name = name or self.sweep_id
+        path = filedialog.asksaveasfilename(
+            parent=self, title="export zip", defaultextension=".zip",
+            initialfile=f"{name}.zip",
+            filetypes=[("zip archive", "*.zip"), ("all files", "*")])
+        if not path:
+            return
+        # the save dialog already confirmed any overwrite
+        if os.path.exists(path):
+            os.remove(path)
+        self.export_btn.configure(state="disabled", text="exporting...")
+
+        def job():
+            return M.export_runs(self.sweep_id, hashes, keys, path)
+
+        def done(counts, err):
+            if err is not None:
+                self.export_btn.configure(state="normal", text="export")
+                messagebox.showerror("export failed", str(err), parent=self)
+                return
+            total = sum(counts.values())
+            lines = "\n".join(f"{M.EXPORT_SUBDIRS[k]}/: {n} file(s)"
+                              for k, n in counts.items() if n)
+            messagebox.showinfo(
+                "export complete",
+                f"{total} file(s) zipped to\n{path}\n\n{lines}",
+                parent=self)
+            self.destroy()
+
+        self.app.submit(self, job, done)
+
+
 class ResultsPanel(tk.Frame):
     def __init__(self, master, app, sweep_id):
         super().__init__(master, bg=BG)
@@ -1001,6 +1119,9 @@ class ResultsPanel(tk.Frame):
         tk.Button(btns, text="compare selected (2)", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
                   command=self._compare).pack(side="left", padx=4)
+        tk.Button(btns, text="export results", fg=ACCENT, bg=BG,
+                  activebackground=BG, relief="flat",
+                  command=self._export).pack(side="left", padx=4)
         tk.Button(btns, text="mark good", fg=GOOD, bg=BG,
                   activebackground=BG, relief="flat",
                   command=lambda: self._mark("good")).pack(
@@ -1020,11 +1141,13 @@ class ResultsPanel(tk.Frame):
         self.tree.bind("b", lambda e: self._mark("bad"))
         self.tree.bind("c", lambda e: self._mark(None))
         self.runs = []
+        self.metas = {}
         ratings = M.read_ratings(sweep_id)
         for h, entry in sorted((status.get("combos") or {}).items(),
                                key=lambda kv: kv[1].get("label", "")):
             meta = M.read_meta(sweep_id, h) or {}
             self.runs.append((h, entry, meta))
+            self.metas[h] = meta
             pts = meta.get("point_count")
             cc = meta.get("class_counts") or {}
             ground = ""
@@ -1049,7 +1172,9 @@ class ResultsPanel(tk.Frame):
         entry = (self.tree.item(h, "values")[0] if self.tree.exists(h)
                  else h)
         self.preview_lbl.configure(text=f"top-down: {entry}")
-        path = os.path.join(M.run_dir(self.sweep_id, h), "topdown.png")
+        outs = (self.metas.get(h) or {}).get("outputs") or {}
+        name = outs.get("topdown", "topdown.png")
+        path = os.path.join(M.run_dir(self.sweep_id, h), name)
         self.preview.set_image_pil(
             Image.open(path) if os.path.exists(path) else None)
 
@@ -1064,6 +1189,11 @@ class ResultsPanel(tk.Frame):
             messagebox.showinfo("compare", "select two runs (ctrl-click)")
             return
         self.app.show_compare(self.sweep_id, sel[0], sel[1])
+
+    def _export(self):
+        """Open the batch-export dialog for this sweep."""
+        ExportDialog(self, self.app, self.sweep_id, self.runs,
+                     self._selected())
 
     def _mark(self, rating):
         """Persist good/bad/clear for every selected run, update the rows."""
@@ -1229,6 +1359,7 @@ class DetailPanel(tk.Frame):
         self.run_hash = run_hash
         self.rdir = M.run_dir(sweep_id, run_hash)
         meta = M.read_meta(sweep_id, run_hash) or {}
+        self.meta = meta
         status = M.get_status(sweep_id) or {}
 
         head = tk.Frame(self, bg=BG)
@@ -1287,11 +1418,19 @@ class DetailPanel(tk.Frame):
         self.nb.pack(fill="both", expand=True, padx=10, pady=8)
         self.nb.bind("<<NotebookTabChanged>>", self._tab_changed)
         self.views = {}
-        self._add_tab("top-down", self._load_file("topdown.png"))
+        self._add_tab("top-down", self._load_file(
+            self._output_file("topdown", "topdown.png")))
         self._xsection_tab()
         self._3d_tab()
-        self._add_tab("DTM", self._load_file("dtm.png"))
-        self._add_tab("canopy height", self._load_file("chm.png"))
+        self._add_tab("DTM", self._load_file(
+            self._output_file("dtm_preview", "dtm.png")))
+        self._add_tab("canopy height", self._load_file(
+            self._output_file("chm_preview", "chm.png")))
+
+    def _output_file(self, key, legacy):
+        """Output filename from meta.json, falling back to the
+        pre-prefix name for runs produced by older versions."""
+        return (self.meta.get("outputs") or {}).get(key) or legacy
 
     def _sync_rating_lbl(self):
         self.rating_lbl.configure(
@@ -1507,12 +1646,15 @@ class ComparePanel(tk.Frame):
 
     def reload(self):
         for title in ("top-down", "DTM", "canopy height"):
+            key, legacy = {
+                "top-down": ("topdown", "topdown.png"),
+                "DTM": ("dtm_preview", "dtm.png"),
+                "canopy height": ("chm_preview", "chm.png")}[title]
             for side, z in zip(("A", "B"), self.views[title]):
                 h = self.sel[side].get()
-                path = os.path.join(M.run_dir(self.sweep_id, h),
-                                    {"top-down": "topdown.png",
-                                     "DTM": "dtm.png",
-                                     "canopy height": "chm.png"}[title])
+                meta = M.read_meta(self.sweep_id, h) or {}
+                name = (meta.get("outputs") or {}).get(key) or legacy
+                path = os.path.join(M.run_dir(self.sweep_id, h), name)
                 z.set_image_pil(Image.open(path)
                                 if os.path.exists(path) else None)
         self.reload_xsections()

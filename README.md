@@ -49,7 +49,9 @@ present; use the browse button to pick any LAS/LAZ file.
    (e.g. SMRF *or* CSF). The cartesian product over all alternatives and
    vary-lists is the grid; the live counter shows how many combinations it
    expands to.
-2. **Outputs** per combination are selectable:
+2. **Outputs** per combination are selectable (each file is prefixed with
+   the run's short hash, e.g. `5524b62cadcc_points.laz`, so files copied
+   out of different run folders stay identifiable):
    - saved point cloud (`points.laz` by default, LAZ-compressed via PDAL's
      `writers.las`; set *cloud format* to `las` for uncompressed — with
      `HeightAboveGround` as extra dim when a HAG step is present)
@@ -64,6 +66,12 @@ present; use the browse button to pick any LAS/LAZ file.
    selecting a sweep shows live status with stop/resume. The results view
    lists all runs with point counts and ground fraction; select one (or
    ctrl-click two) to open the detail view or the side-by-side comparison.
+   Runs can be **marked good/bad** (buttons or g/b/c keys) — marks persist
+   per sweep in `ratings.json`. **export results** zips chosen outputs
+   (point cloud, DTM, CHM, renders) for all/good/bad/selected runs into an
+   archive named after the sweep, one subdirectory per output kind
+   (`points/`, `dtm/`, ...); LAZ point clouds are stored uncompressed
+   inside the zip (they are already compressed).
 4. **Detail**: tabs for top-down, cross-section (strip position/width
    controls, rendered off the UI thread), a 3D scatter view
    (drag-to-rotate, one show/hide toggle per classification class, a
