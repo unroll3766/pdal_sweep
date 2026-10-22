@@ -9,6 +9,7 @@ Spec format (JSON):
   "workers": 2,
   "raster_resolution": 0.25,
   "render_budget_points": 600000,
+  "point_format": "laz",
   "outputs": {"point_cloud": true, "dtm": true, "chm": true,
               "topdown": true, "crosssection": true},
   "steps": [
@@ -94,13 +95,17 @@ def expand_spec(spec):
     if not step_options:
         return []
     combos = []
+    fmt = str(spec.get("point_format", "laz")).strip().lower()
     for choice in itertools.product(*[opts for _, opts in step_options]):
         steps = []
         labels = []
         for (sid, _), (ftype, params, olabel) in zip(step_options, choice):
             steps.append((sid, ftype, params, olabel))
             labels.append(f"{sid}={olabel}")
-        h = hashlib.sha256(repr(steps).encode("utf-8")).hexdigest()[:12]
+        # the export format is part of the run identity: changing it
+        # gives new hashes so cached .las runs are not reused for .laz
+        h = hashlib.sha256(
+            (repr(steps) + f"|fmt={fmt}").encode("utf-8")).hexdigest()[:12]
         combos.append({
             "hash": h,
             "label": " | ".join(labels),

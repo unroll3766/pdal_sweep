@@ -101,9 +101,14 @@ def run_combo(spec, combo, sweep_dir):
     if os.path.exists(done_path):
         return {"hash": combo["hash"], "status": "cached"}
 
-    points_las = os.path.join(run_dir, "points.las")
+    # point cloud export: LAZ by default, LAS via spec point_format
+    ext = "laz" if str(spec.get("point_format", "laz")).lower() == "laz" \
+        else "las"
+    points_las = os.path.join(run_dir, f"points.{ext}")
     stages = build_pipeline(spec, combo)
     writer = {"type": "writers.las", "filename": points_las}
+    if ext == "laz":
+        writer["compression"] = True
     if flags["has_hag"]:
         writer["extra_dims"] = "HeightAboveGround=double"
     stages.append(writer)
@@ -205,7 +210,7 @@ def run_combo(spec, combo, sweep_dir):
                 "chm skipped: no height-above-ground step in the pipeline"]
 
     if out.get("point_cloud", True):
-        result["outputs"]["point_cloud"] = "points.las"
+        result["outputs"]["point_cloud"] = os.path.basename(points_las)
 
     with open(meta_path, "w") as f:
         json.dump(result, f, indent=1)

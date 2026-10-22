@@ -621,17 +621,25 @@ class BuildPanel(tk.Frame):
         self.workers_var = tk.StringVar(value="2")
         self.res_var = tk.StringVar(value="0.25")
         self.budget_var = tk.StringVar(value="2000000")
+        self.format_var = tk.StringVar(value="laz")
         for col, (label, var, w) in enumerate((
                 ("sweep name", self.name_var, 18),
                 ("workers", self.workers_var, 5),
                 ("raster res (m)", self.res_var, 8),
-                ("render point budget", self.budget_var, 10))):
+                ("render point budget", self.budget_var, 10),
+                ("cloud format", self.format_var, 6))):
             f = tk.Frame(grid, bg=BG)
             f.grid(row=0, column=col, padx=(0, 14), sticky="nw")
             tk.Label(f, text=label, bg=BG, fg=MUTED).pack(anchor="w")
-            tk.Entry(f, textvariable=var, width=w, bg=BG2, fg=FG,
-                     insertbackground=FG, relief="flat", highlightthickness=1,
-                     highlightbackground="#333a48").pack()
+            if label == "cloud format":
+                cb = ttk.Combobox(f, textvariable=var, state="readonly",
+                                  values=("laz", "las"), width=w)
+                cb.pack()
+            else:
+                tk.Entry(f, textvariable=var, width=w, bg=BG2, fg=FG,
+                         insertbackground=FG, relief="flat",
+                         highlightthickness=1,
+                         highlightbackground="#333a48").pack()
         self.out_vars = {}
         of = tk.Frame(head, bg=BG)
         of.pack(anchor="w")
@@ -701,6 +709,8 @@ class BuildPanel(tk.Frame):
         self.res_var.set(str(spec.get("raster_resolution", 0.25)))
         self.budget_var.set(str(spec.get("render_budget_points",
                                          2000000)))
+        self.format_var.set(
+            str(spec.get("point_format", "laz")).lower() or "laz")
         for key, var in self.out_vars.items():
             var.set(bool(spec.get("outputs", {}).get(key, True)))
         for s in self.steps:
@@ -803,6 +813,7 @@ class BuildPanel(tk.Frame):
             "workers": int(self.workers_var.get() or 2),
             "raster_resolution": float(self.res_var.get() or 0.25),
             "render_budget_points": int(self.budget_var.get() or 2000000),
+            "point_format": self.format_var.get() or "laz",
             "outputs": {k: v.get() for k, v in self.out_vars.items()},
             "steps": steps,
         }

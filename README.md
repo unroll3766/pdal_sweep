@@ -50,8 +50,9 @@ present; use the browse button to pick any LAS/LAZ file.
    vary-lists is the grid; the live counter shows how many combinations it
    expands to.
 2. **Outputs** per combination are selectable:
-   - saved point cloud (`points.las`, with `HeightAboveGround` as extra dim
-     when a HAG step is present)
+   - saved point cloud (`points.laz` by default, LAZ-compressed via PDAL's
+     `writers.las`; set *cloud format* to `las` for uncompressed — with
+     `HeightAboveGround` as extra dim when a HAG step is present)
    - top-down render (max Z per cell)
    - cross section (X-Z profile through a movable Y strip, colored by
      classification)
