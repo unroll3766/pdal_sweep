@@ -660,7 +660,7 @@ class BuildPanel(tk.Frame):
         self.steps_host = sf.body
         self.steps = []
         btns = tk.Frame(self, bg=BG)
-        btns.pack(fill="x", padx=10, pady=8)
+        btns.pack(fill="x", padx=10, pady=(8, 0))
         tk.Button(btns, text="add step", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
                   command=lambda: self.add_step()).pack(side="left")
@@ -670,15 +670,17 @@ class BuildPanel(tk.Frame):
         tk.Button(btns, text="preview combinations", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
                   command=self.preview_combos).pack(side="left")
-        tk.Button(btns, text="import JSON", fg=ACCENT, bg=BG,
+        btns2 = tk.Frame(self, bg=BG)
+        btns2.pack(fill="x", padx=10, pady=(2, 8))
+        tk.Button(btns2, text="import JSON", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
-                  command=self.import_spec).pack(side="left", padx=10)
-        tk.Button(btns, text="export JSON", fg=ACCENT, bg=BG,
+                  command=self.import_spec).pack(side="left")
+        tk.Button(btns2, text="export JSON", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
-                  command=self.export_spec).pack(side="left")
-        self.count_lbl = tk.Label(btns, text="", bg=BG, fg=MUTED)
+                  command=self.export_spec).pack(side="left", padx=10)
+        self.count_lbl = tk.Label(btns2, text="", bg=BG, fg=MUTED)
         self.count_lbl.pack(side="left", padx=10)
-        tk.Button(btns, text="run grid search", bg=ACCENT, fg="#0d1117",
+        tk.Button(btns2, text="run grid search", bg=ACCENT, fg="#0d1117",
                   activebackground=ACCENT, relief="flat",
                   command=self.run).pack(side="right")
         self.load_example()
@@ -880,7 +882,7 @@ class ProgressPanel(tk.Frame):
         self.bar = ttk.Progressbar(self, length=400)
         self.bar.pack(anchor="w", padx=10, pady=6)
         self.warn_lbl = tk.Label(self, text="", bg=BG, fg=WARN,
-                                 wraplength=760, justify="left")
+                                 wraplength=520, justify="left")
         self.warn_lbl.pack(anchor="w", padx=10)
         cols = ("label", "points", "ground", "state")
         self.tree = ttk.Treeview(self, columns=cols, show="headings",
@@ -1082,27 +1084,35 @@ class ResultsPanel(tk.Frame):
         warns = status.get("sweep_warnings") or []
         if warns:
             tk.Label(self, text="\n".join("- " + w for w in warns), bg=BG,
-                     fg=WARN, wraplength=760, justify="left").pack(
+                     fg=WARN, wraplength=520, justify="left").pack(
                 anchor="w", padx=10)
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=10, pady=6)
         cols = ("label", "points", "ground", "secs", "state", "mark")
-        self.tree = ttk.Treeview(body, columns=cols, show="headings",
+        widths = (240, 60, 55, 45, 60, 45)
+        left = tk.Frame(body, bg=BG)
+        left.pack(side="left", fill="both", expand=True)
+        self.tree = ttk.Treeview(left, columns=cols, show="headings",
                                  selectmode="extended", height=16)
-        widths = (420, 90, 90, 60, 80, 60)
         for c, w in zip(cols, widths):
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor="w")
         self.tree.tag_configure("good", foreground=GOOD)
         self.tree.tag_configure("bad", foreground=BAD)
-        self.tree.pack(side="left", fill="y")
-        sb = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        sb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
-        sb.pack(side="left", fill="y")
+        sb.grid(row=0, column=1, sticky="ns")
+        hb = ttk.Scrollbar(left, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(xscrollcommand=hb.set)
+        hb.grid(row=1, column=0, sticky="ew")
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(0, weight=1)
         right = tk.Frame(body, bg=BG)
         right.pack(side="left", fill="both", expand=True, padx=(12, 0))
         self.preview_lbl = tk.Label(right, text="select a run to preview",
-                                    bg=BG, fg=MUTED, anchor="w")
+                                    bg=BG, fg=MUTED, anchor="w",
+                                    wraplength=360)
         self.preview_lbl.pack(fill="x", pady=(0, 4))
         self.preview = ZoomableImage(right)
         self.preview.pack(fill="both", expand=True, pady=(0, 8))
@@ -1122,15 +1132,17 @@ class ResultsPanel(tk.Frame):
         tk.Button(btns, text="export results", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
                   command=self._export).pack(side="left", padx=4)
-        tk.Button(btns, text="mark good", fg=GOOD, bg=BG,
+        marks = tk.Frame(right, bg=BG)
+        marks.pack(pady=(4, 0))
+        tk.Button(marks, text="mark good", fg=GOOD, bg=BG,
                   activebackground=BG, relief="flat",
                   command=lambda: self._mark("good")).pack(
             side="left", padx=4)
-        tk.Button(btns, text="mark bad", fg=BAD, bg=BG,
+        tk.Button(marks, text="mark bad", fg=BAD, bg=BG,
                   activebackground=BG, relief="flat",
                   command=lambda: self._mark("bad")).pack(
             side="left", padx=4)
-        tk.Button(btns, text="clear mark", fg=MUTED, bg=BG,
+        tk.Button(marks, text="clear mark", fg=MUTED, bg=BG,
                   activebackground=BG, relief="flat",
                   command=lambda: self._mark(None)).pack(
             side="left", padx=4)
@@ -1221,9 +1233,10 @@ class Viewer3D(tk.Frame):
 
     DEFAULT_BUDGET = 50000
 
-    def __init__(self, master, app, data=None):
+    def __init__(self, master, app, data=None, compact=False):
         super().__init__(master, bg=BG)
         self.app = app
+        self.compact = compact
         self.full = None          # full point arrays, kept for re-budget
         self.artists = {}         # class -> scatter artist
         self.checks = {}          # class -> BooleanVar
@@ -1238,9 +1251,10 @@ class Viewer3D(tk.Frame):
                  fg=FG, insertbackground=FG, relief="flat",
                  highlightthickness=1, highlightbackground="#333a48").pack(
             side="left")
-        self.hint = tk.Label(ctrl, bg=BG, fg=MUTED,
-                             text="drag to rotate, right-drag to zoom")
-        self.hint.pack(side="left", padx=14)
+        if not compact:
+            tk.Label(ctrl, bg=BG, fg=MUTED,
+                     text="drag to rotate, right-drag to zoom").pack(
+                side="left", padx=14)
         tk.Button(ctrl, text="reset view", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
                   command=lambda: self._reset_view()).pack(side="right")
@@ -1277,7 +1291,8 @@ class Viewer3D(tk.Frame):
         ax.set_zlabel("Z", fontsize=8)
         x, y, z = data["X"], data["Y"], data["Z"]
         c = data["Classification"].astype(int)
-        for cls in sorted(set(c.tolist())):
+        row = None
+        for i, cls in enumerate(sorted(set(c.tolist()))):
             m = c == cls
             color = O.CLASS_COLORS.get(cls, "#7f8c8d")
             self.artists[cls] = ax.scatter(
@@ -1287,10 +1302,14 @@ class Viewer3D(tk.Frame):
             var.trace_add("write", lambda *_a, _cl=cls: self._apply(_cl))
             self.checks[cls] = var
             name = O.CLASS_NAMES.get(cls, f"class {cls}")
-            tk.Label(self.classbar, text="\u25a0", fg=color, bg=BG).pack(
+            # wrap the toggle bar so many classes stay inside the pane
+            if i % 2 == 0:
+                row = tk.Frame(self.classbar, bg=BG)
+                row.pack(anchor="w")
+            tk.Label(row, text="\u25a0", fg=color, bg=BG).pack(
                 side="left", padx=(8, 0))
             tk.Checkbutton(
-                self.classbar, text=f"{name} ({int(m.sum()):,})",
+                row, text=f"{name} ({int(m.sum()):,})",
                 variable=var, bg=BG, fg=FG, activebackground=BG,
                 selectcolor=BG2).pack(side="left")
         xr = float(x.max() - x.min()) or 1.0
@@ -1301,7 +1320,11 @@ class Viewer3D(tk.Frame):
         self._fig = fig
         self.canvas = FigureCanvasTkAgg(fig, master=self.plot_host)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        # small size request: the packer stretches the canvas to the
+        # available space, and mpl re-renders at the allocated size
+        w = self.canvas.get_tk_widget()
+        w.configure(width=40, height=40)
+        w.pack(fill="both", expand=True)
 
     def _reset_view(self):
         if getattr(self, "_ax", None) is not None:
@@ -1365,7 +1388,7 @@ class DetailPanel(tk.Frame):
         head = tk.Frame(self, bg=BG)
         head.pack(fill="x", padx=10, pady=(10, 4))
         tk.Label(head, text=meta.get("label", run_hash), bg=BG, fg=FG,
-                 font=("sans", 12, "bold"), wraplength=700,
+                 font=("sans", 12, "bold"), wraplength=520,
                  justify="left").pack(side="left")
         tk.Button(head, text="open folder", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
@@ -1388,7 +1411,7 @@ class DetailPanel(tk.Frame):
                                                 or [])
         if warns:
             tk.Label(self, text="\n".join("- " + w for w in warns), bg=BG,
-                     fg=WARN, wraplength=760, justify="left").pack(
+                     fg=WARN, wraplength=520, justify="left").pack(
                 anchor="w", padx=10)
 
         stats = tk.Frame(self, bg=BG)
@@ -1599,7 +1622,8 @@ class ComparePanel(tk.Frame):
         self.nb.bind("<<NotebookTabChanged>>", self._tab_changed)
         self.views = {"top-down": [], "DTM": [], "canopy height": []}
         self.tabs = {}
-        for title in ("top-down", "cross-section", "DTM", "canopy height"):
+        for title in ("top-down", "cross-section", "3D view", "DTM",
+                      "canopy height"):
             f = tk.Frame(self.nb, bg=BG)
             self.nb.add(f, text=title)
             self.tabs[title] = f
@@ -1629,6 +1653,17 @@ class ComparePanel(tk.Frame):
                     z = ZoomableImage(f)
                     z.pack(side="left", fill="both", expand=True, padx=2)
                     self.xviews.append(z)
+            elif title == "3D view":
+                self.views3d = {}
+                for side in ("A", "B"):
+                    vf = tk.Frame(f, bg=BG)
+                    vf.pack(side="left", fill="both", expand=True,
+                            padx=(4, 4))
+                    tk.Label(vf, text=f"run {side}", bg=BG, fg=MUTED
+                             ).pack(anchor="w")
+                    v = Viewer3D(vf, self.app, compact=True)
+                    v.pack(fill="both", expand=True)
+                    self.views3d[side] = v
             else:
                 for _ in range(2):
                     z = ZoomableImage(f)
@@ -1658,6 +1693,39 @@ class ComparePanel(tk.Frame):
                 z.set_image_pil(Image.open(path)
                                 if os.path.exists(path) else None)
         self.reload_xsections()
+        self._reload_3d()
+
+    def _reload_3d(self):
+        """Point each side's 3D viewer at its run's cached points.
+
+        Reuses the cross-section caches when already loaded; loads
+        per-viewer with the viewer itself as job owner, so these loads
+        never cancel the cross-section render jobs.
+        """
+        if not hasattr(self, "_caches"):
+            self._caches = {}
+        for side, viewer in self.views3d.items():
+            h = self.sel[side].get()
+            viewer._run_hash = h
+            if not h:
+                continue
+            if h in self._caches:
+                viewer.set_data(self._caches[h])
+                continue
+            rdir = M.run_dir(self.sweep_id, h)
+            if not os.path.exists(os.path.join(rdir, "render_points.npz")):
+                continue
+
+            def job(h=h):
+                return O.load_cache(M.run_dir(self.sweep_id, h))
+
+            def done(data, err, h=h, viewer=viewer):
+                if err is None and data:
+                    self._caches[h] = data
+                    if viewer._run_hash == h:
+                        viewer.set_data(data)
+
+            self.app.submit(viewer, job, done)
 
     def reload_xsections(self):
         """Debounced: coalesce rapid slider drags into one render pair."""

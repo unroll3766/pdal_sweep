@@ -85,8 +85,9 @@ present; use the browse button to pick any LAS/LAZ file.
    point-count budget for interactive speed), DTM and canopy height, a
    class table with per-class output vs input counts, warnings, and an
    "open folder" button for the run's files.
-5. **Compare**: any two runs side by side across the same output tabs,
-   with a synced cross-section slider.
+5. **Compare**: any two runs side by side across the same output tabs
+   (including a side-by-side 3D scatter view), with a synced
+   cross-section slider.
 
 Builder conveniences: steps can be reordered with **up**/**down**, each
 alternative filter can be **collapsed** for readability, **reset
