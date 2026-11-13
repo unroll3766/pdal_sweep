@@ -1265,11 +1265,9 @@ class Viewer3D(tk.Frame):
         self.artists = {}         # class -> scatter artist
         self.checks = {}          # class -> BooleanVar
         self._pending_render = None
-        self._zoom_factor = 1.0   # box zoom; right-drag multiplies this
+        self._zoom_factor = 1.0   # box zoom; the zoom slider sets this
         self._aspect = (4.0, 4.0, 3.0)
-        self._b3_y = None
-        self._b3_x = None
-        self._b3_z0 = 1.0
+        self._pending_zoom = None
         ctrl = tk.Frame(self, bg=BG)
         ctrl.pack(fill="x", pady=(0, 2))
         tk.Label(ctrl, text="max points", bg=BG, fg=MUTED).pack(
@@ -1288,9 +1286,16 @@ class Viewer3D(tk.Frame):
                  fg=FG, insertbackground=FG, relief="flat",
                  highlightthickness=1, highlightbackground="#333a48").pack(
             side="left")
+        tk.Label(ctrl, text="zoom", bg=BG, fg=MUTED).pack(
+            side="left", padx=(10, 4))
+        self.zoom_var = tk.DoubleVar(value=1.0)
+        tk.Scale(ctrl, variable=self.zoom_var, from_=0.2, to=5.0,
+                 resolution=0.01, orient="horizontal", bg=BG, fg=FG,
+                 troughcolor=BG2, length=120, highlightthickness=0,
+                 command=lambda _v: self._zoom_changed()).pack(side="left")
         if not compact:
             tk.Label(ctrl, bg=BG, fg=MUTED,
-                     text="drag to rotate, right-drag to zoom").pack(
+                     text="drag to rotate, right-drag zooms axes").pack(
                 side="left", padx=14)
         tk.Button(ctrl, text="reset view", fg=ACCENT, bg=BG,
                   activebackground=BG, relief="flat",
@@ -1363,18 +1368,11 @@ class Viewer3D(tk.Frame):
         w = self.canvas.get_tk_widget()
         w.configure(width=40, height=40)
         w.pack(fill="both", expand=True)
-        # take over right-drag: zoom the rendered cloud (box zoom) instead
-        # of mplot3d's default, which only rescales the axis limits
-        ax.mouse_init(zoom_btn=[])
-        w.bind("<ButtonPress-3>", self._on_b3_press)
-        # a rapid second press arrives as Double-Button-3, not ButtonPress-3
-        w.bind("<Double-Button-3>", self._on_b3_press)
-        w.bind("<B3-Motion>", self._on_b3_motion)
-        w.bind("<ButtonRelease-3>", self._on_b3_release)
 
     def _reset_view(self):
         if getattr(self, "_ax", None) is not None:
             self._zoom_factor = 1.0
+            self.zoom_var.set(1.0)
             self._ax.set_box_aspect(self._aspect, zoom=1.0)
             self._ax.view_init(elev=30, azim=-60)
             self.canvas.draw_idle()
@@ -1395,33 +1393,20 @@ class Viewer3D(tk.Frame):
         if getattr(self, "canvas", None) is not None:
             self.canvas.draw_idle()
 
-    def _on_b3_press(self, e):
-        # zoom is a function of the total drag from the press point, so
-        # short and fast drags behave predictably
-        self._b3_x = e.x
-        self._b3_y = e.y
-        self._b3_z0 = self._zoom_factor
+    def _zoom_changed(self):
+        """Debounced zoom slider: apply after the drag settles."""
+        if self._pending_zoom is not None:
+            self.after_cancel(self._pending_zoom)
+        self._pending_zoom = self.after(150, self._apply_zoom)
 
-    def _on_b3_motion(self, e):
-        if self._b3_y is None or getattr(self, "_ax", None) is None:
+    def _apply_zoom(self):
+        """Apply the slider's zoom as a box zoom (scales points and grid)."""
+        self._pending_zoom = None
+        if getattr(self, "_ax", None) is None:
             return
-        w = max(1, e.widget.winfo_width())
-        h = max(1, e.widget.winfo_height())
-        dx = e.x - self._b3_x
-        dy = e.y - self._b3_y
-        # zoom along whichever axis the drag is mostly on; dragging
-        # down or right (positive d) zooms in
-        if abs(dy) >= abs(dx):
-            ref, d = h, dy
-        else:
-            ref, d = w, dx
-        denom = max(1.0, ref - d)
-        self._zoom_factor = max(0.05, min(40.0, self._b3_z0 * ref / denom))
+        self._zoom_factor = max(0.05, min(40.0, float(self.zoom_var.get())))
         self._ax.set_box_aspect(self._aspect, zoom=self._zoom_factor)
         self.canvas.draw_idle()
-
-    def _on_b3_release(self, _e):
-        self._b3_y = None
 
     def _apply(self, cls):
         """One class's checkbox changed: toggle its artist."""

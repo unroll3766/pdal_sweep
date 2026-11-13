@@ -20,3 +20,8 @@
 - User ran the instrumented launcher (tests/debug_b3.py) and right-dragged twice: log showed our handlers DO fire on real input on the canvas, but zoom only responded to vertical dy with per-event multiplication, so a mostly-horizontal reflex drag (dy=-12 over 182 px) moved zoom 1.0 -> 0.94 — imperceptible.
 - Fix: zoom is now press-relative and follows the dominant drag axis (down/right = zoom in), clamped [0.05, 40]; also bound <Double-Button-3> because a rapid second press arrives as Double, not ButtonPress-3.
 - tests/test_b3_app_drag.py: 13/13 PASS (vertical 120 px -> zoom 1.429 = H/(H-120); horizontal 150 px -> 1.696; drag up zooms out; huge jump clamped; limits unchanged; 24430 render px changed). test_gui_items.py / test_app_smoke.py / test_runner_bounds.py re-run green.
+
+## 2026-11-13 — item 3 changed to a zoom slider (user on macOS: right-drag takeover not worth it)
+- Reverted all custom mouse handling in Viewer3D (mouse_init override, Button-3/Double-Button-3/B3-Motion/Release bindings, drag handlers, _right_button helper): stock mplot3d mouse behavior is back (left-drag rotate, right-drag axis-limits zoom, as before).
+- Zoom that actually scales the points is now a "zoom" slider in the 3D control bar (0.2-5.0, default 1.0), applied as a box zoom via set_box_aspect(aspect, zoom=...), debounced 150 ms; reset view restores 1.0. Platform-independent, no button-number assumptions.
+- tests/test_3d_zoom_slider.py (app-level: debounced slider applies zoom 3.0, limits unchanged, 72289 render px changed, reset restores 1.0): 7/7 PASS. tests/test_gui_items.py item3 section rewritten for the slider: PASS. test_app_smoke.py / test_runner_bounds.py re-run green.

@@ -123,38 +123,25 @@ v._apply_size()
 root.update()
 sizes = {float(a.get_sizes()[0]) for a in v.artists.values()}
 check("item4 point size applied", sizes == {3.5})
-check("item3 default right-drag zoom disabled", 3 not in v._ax._zoom_btn)
+check("item3 zoom slider present", v.zoom_var.get() == 1.0)
 lim0 = v._ax.get_xlim()
-
-
-class E:
-    pass
-
-
-e = E()
-e.widget = v.canvas.get_tk_widget()
-e.x = 100
-e.y = 100
-v._on_b3_press(e)
-e.y = 120  # drag down 20 px on the (small) widget: zoom in
-v._on_b3_motion(e)
-check("item3 zoom factor increased", v._zoom_factor > 1.0)
+buf0 = np.asarray(v.canvas.buffer_rgba()).copy()
+v.zoom_var.set(2.5)
+v._apply_zoom()
+root.update()
+check("item3 slider sets box zoom", abs(v._zoom_factor - 2.5) < 1e-9)
 check("item3 axis limits unchanged (box zoom, not limits zoom)",
       v._ax.get_xlim() == lim0)
-z_before = v._zoom_factor
-e.y = 100
-v._on_b3_press(e)
-e.y = 100 + 10 * e.widget.winfo_height()  # jump far past widget height
-try:
-    v._on_b3_motion(e)
-    ok = True
-except ZeroDivisionError:
-    ok = False
-check("item3 huge drag jump clamped, no error",
-      ok and 0.05 <= v._zoom_factor <= 40.0)
+buf1 = np.asarray(v.canvas.buffer_rgba()).copy()
+check("item3 render changed after zoom",
+      not np.array_equal(buf0, buf1))
+v.zoom_var.set(100.0)
+v._apply_zoom()
+check("item3 zoom clamped", 0.05 <= v._zoom_factor <= 40.0)
 v._reset_view()
 root.update()
-check("item3 reset restores zoom 1", abs(v._zoom_factor - 1.0) < 1e-9)
+check("item3 reset restores zoom 1", abs(v._zoom_factor - 1.0) < 1e-9
+      and abs(v.zoom_var.get() - 1.0) < 1e-9)
 
 # --- item 5: results preview output selector
 rp = gui.ResultsPanel(root, app, sweep_id)
