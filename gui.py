@@ -232,14 +232,14 @@ class ParamRow:
         self.value_var.trace_add(
             "write", lambda *_: self.app.update_combo_count())
         self._preset_value(preset, pdef)
-        vary = tk.Checkbutton(self.frame, variable=self.vary_var, text="vary",
-                              bg=BG, activebackground=BG, fg=MUTED,
-                              command=self._vary_toggled)
+        self._vary_cb = tk.Checkbutton(self.frame, variable=self.vary_var,
+                                       text="vary", bg=BG, activebackground=BG,
+                                       fg=MUTED, command=self._vary_toggled)
         cb.pack(side="left")
         name.pack(side="left")
         self._entry = self._make_value_widget()
         self._entry.pack(side="left", fill="x", expand=True, padx=(4, 8))
-        vary.pack(side="left")
+        self._vary_cb.pack(side="left")
 
     def _preset_value(self, preset, pdef):
         if preset and preset.get("vary"):
@@ -276,7 +276,8 @@ class ParamRow:
             self.set_var.set(True)
             self.value_var.set(cur if cur else "")
         self._entry = self._make_value_widget()
-        self._entry.pack(side="left", fill="x", expand=True, padx=(4, 8))
+        self._entry.pack(side="left", fill="x", expand=True, padx=(4, 8),
+                         before=self._vary_cb)
         self.app.update_combo_count()
 
     def _sync(self):
@@ -1110,10 +1111,17 @@ class ResultsPanel(tk.Frame):
         left.rowconfigure(0, weight=1)
         right = tk.Frame(body, bg=BG)
         right.pack(side="left", fill="both", expand=True, padx=(12, 0))
-        self.preview_lbl = tk.Label(right, text="select a run to preview",
-                                    bg=BG, fg=MUTED, anchor="w",
-                                    wraplength=360)
-        self.preview_lbl.pack(fill="x", pady=(0, 4))
+        ptop = tk.Frame(right, bg=BG)
+        ptop.pack(fill="x", pady=(0, 4))
+        self.preview_lbl = tk.Label(ptop, text="select a run to preview",
+                                    bg=BG, fg=MUTED, anchor="w")
+        self.preview_lbl.pack(side="left")
+        self.kind_var = tk.StringVar(value="top-down")
+        self.kind_cb = ttk.Combobox(
+            ptop, textvariable=self.kind_var, state="readonly", width=14,
+            values=[k for k, _key, _legacy in self.PREVIEW_KINDS])
+        self.kind_cb.pack(side="right")
+        self.kind_cb.bind("<<ComboboxSelected>>", lambda e: self._preview())
         self.preview = ZoomableImage(right)
         self.preview.pack(fill="both", expand=True, pady=(0, 8))
         btns = tk.Frame(right, bg=BG)
@@ -1175,18 +1183,33 @@ class ResultsPanel(tk.Frame):
     def _selected(self):
         return self.tree.selection()
 
+    # (label, meta outputs key, legacy filename) for the preview selector
+    PREVIEW_KINDS = (("top-down", "topdown", "topdown.png"),
+                     ("cross-section", "xsection", "xsection.png"),
+                     ("DTM", "dtm_preview", "dtm.png"),
+                     ("canopy height", "chm_preview", "chm.png"))
+
     def _preview(self):
-        """Update the preview to whatever run is selected."""
+        """Update the preview to the selected run and chosen output kind."""
         sel = self._selected()
         if not sel:
             return
         h = sel[0]
         entry = (self.tree.item(h, "values")[0] if self.tree.exists(h)
                  else h)
-        self.preview_lbl.configure(text=f"top-down: {entry}")
         outs = (self.metas.get(h) or {}).get("outputs") or {}
-        name = outs.get("topdown", "topdown.png")
-        path = os.path.join(M.run_dir(self.sweep_id, h), name)
+        kind = self.kind_var.get()
+        key, legacy = next(((k, l) for kk, k, l in self.PREVIEW_KINDS
+                            if kk == kind), ("topdown", "topdown.png"))
+        path = os.path.join(M.run_dir(self.sweep_id, h),
+                            outs.get(key, legacy))
+        if not os.path.exists(path) and key != "topdown":
+            # chosen output missing for this run: fall back to top-down
+            kind, key, legacy = "top-down", "topdown", "topdown.png"
+            self.kind_var.set(kind)
+            path = os.path.join(M.run_dir(self.sweep_id, h),
+                                outs.get(key, legacy))
+        self.preview_lbl.configure(text=f"{kind}: {entry}")
         self.preview.set_image_pil(
             Image.open(path) if os.path.exists(path) else None)
 
@@ -1232,6 +1255,7 @@ class Viewer3D(tk.Frame):
     """
 
     DEFAULT_BUDGET = 50000
+    DEFAULT_SIZE = 0.7
 
     def __init__(self, master, app, data=None, compact=False):
         super().__init__(master, bg=BG)
@@ -1241,6 +1265,9 @@ class Viewer3D(tk.Frame):
         self.artists = {}         # class -> scatter artist
         self.checks = {}          # class -> BooleanVar
         self._pending_render = None
+        self._zoom_factor = 1.0   # box zoom; right-drag multiplies this
+        self._aspect = (4.0, 4.0, 3.0)
+        self._b3_y = None
         ctrl = tk.Frame(self, bg=BG)
         ctrl.pack(fill="x", pady=(0, 2))
         tk.Label(ctrl, text="max points", bg=BG, fg=MUTED).pack(
@@ -1248,6 +1275,14 @@ class Viewer3D(tk.Frame):
         self.budget_var = tk.StringVar(value=f"{self.DEFAULT_BUDGET:,}")
         self.budget_var.trace_add("write", lambda *_: self._render())
         tk.Entry(ctrl, textvariable=self.budget_var, width=9, bg=BG2,
+                 fg=FG, insertbackground=FG, relief="flat",
+                 highlightthickness=1, highlightbackground="#333a48").pack(
+            side="left")
+        tk.Label(ctrl, text="point size", bg=BG, fg=MUTED).pack(
+            side="left", padx=(10, 4))
+        self.size_var = tk.StringVar(value=str(self.DEFAULT_SIZE))
+        self.size_var.trace_add("write", lambda *_: self._apply_size())
+        tk.Entry(ctrl, textvariable=self.size_var, width=5, bg=BG2,
                  fg=FG, insertbackground=FG, relief="flat",
                  highlightthickness=1, highlightbackground="#333a48").pack(
             side="left")
@@ -1296,7 +1331,7 @@ class Viewer3D(tk.Frame):
             m = c == cls
             color = O.CLASS_COLORS.get(cls, "#7f8c8d")
             self.artists[cls] = ax.scatter(
-                x[m], y[m], z[m], s=0.7, c=color, linewidths=0,
+                x[m], y[m], z[m], s=self._size(), c=color, linewidths=0,
                 depthshade=True)
             var = tk.BooleanVar(value=True)
             var.trace_add("write", lambda *_a, _cl=cls: self._apply(_cl))
@@ -1315,7 +1350,8 @@ class Viewer3D(tk.Frame):
         xr = float(x.max() - x.min()) or 1.0
         yr = float(y.max() - y.min()) or 1.0
         zr = float(z.max() - z.min()) or 1.0
-        ax.set_box_aspect((xr, yr, zr * 3))
+        self._aspect = (xr, yr, zr * 3)
+        ax.set_box_aspect(self._aspect, zoom=self._zoom_factor)
         self._ax = ax
         self._fig = fig
         self.canvas = FigureCanvasTkAgg(fig, master=self.plot_host)
@@ -1325,11 +1361,55 @@ class Viewer3D(tk.Frame):
         w = self.canvas.get_tk_widget()
         w.configure(width=40, height=40)
         w.pack(fill="both", expand=True)
+        # take over right-drag: zoom the rendered cloud (box zoom) instead
+        # of mplot3d's default, which only rescales the axis limits
+        ax.mouse_init(zoom_btn=[])
+        w.bind("<ButtonPress-3>", self._on_b3_press)
+        w.bind("<B3-Motion>", self._on_b3_motion)
+        w.bind("<ButtonRelease-3>", self._on_b3_release)
 
     def _reset_view(self):
         if getattr(self, "_ax", None) is not None:
+            self._zoom_factor = 1.0
+            self._ax.set_box_aspect(self._aspect, zoom=1.0)
             self._ax.view_init(elev=30, azim=-60)
             self.canvas.draw_idle()
+
+    def _size(self):
+        try:
+            return max(0.05, min(100.0, float(self.size_var.get())))
+        except ValueError:
+            return self.DEFAULT_SIZE
+
+    def _apply_size(self):
+        """Point size entry changed: resize every class's scatter."""
+        if not self.artists:
+            return
+        s = self._size()
+        for a in self.artists.values():
+            a.set_sizes([s])
+        if getattr(self, "canvas", None) is not None:
+            self.canvas.draw_idle()
+
+    def _on_b3_press(self, e):
+        self._b3_y = e.y
+
+    def _on_b3_motion(self, e):
+        # same scale formula mplot3d uses: dragging down zooms in
+        if self._b3_y is None or getattr(self, "_ax", None) is None:
+            return
+        h = max(1, e.widget.winfo_height())
+        dy = e.y - self._b3_y
+        self._b3_y = e.y
+        if dy == 0:
+            return
+        self._zoom_factor = max(0.05, min(40.0,
+                                          self._zoom_factor * h / (h - dy)))
+        self._ax.set_box_aspect(self._aspect, zoom=self._zoom_factor)
+        self.canvas.draw_idle()
+
+    def _on_b3_release(self, _e):
+        self._b3_y = None
 
     def _apply(self, cls):
         """One class's checkbox changed: toggle its artist."""
@@ -1387,6 +1467,10 @@ class DetailPanel(tk.Frame):
 
         head = tk.Frame(self, bg=BG)
         head.pack(fill="x", padx=10, pady=(10, 4))
+        tk.Button(head, text="back to results", fg=ACCENT, bg=BG,
+                  activebackground=BG, relief="flat",
+                  command=lambda: app.show_results(sweep_id, force=True)
+                  ).pack(side="left", padx=(0, 10))
         tk.Label(head, text=meta.get("label", run_hash), bg=BG, fg=FG,
                  font=("sans", 12, "bold"), wraplength=520,
                  justify="left").pack(side="left")
@@ -1607,6 +1691,10 @@ class ComparePanel(tk.Frame):
                                         else a)
         top = tk.Frame(self, bg=BG)
         top.pack(fill="x", padx=10, pady=(10, 4))
+        tk.Button(top, text="back to results", fg=ACCENT, bg=BG,
+                  activebackground=BG, relief="flat",
+                  command=lambda: app.show_results(sweep_id, force=True)
+                  ).pack(side="left", padx=(0, 20))
         self.sel = {}
         for side, cur in (("A", a), ("B", b)):
             f = tk.Frame(top, bg=BG)
