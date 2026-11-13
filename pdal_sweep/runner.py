@@ -76,14 +76,22 @@ def _parse_meta(metadata_path):
             stats = val.get("statistic", [])
             if isinstance(stats, dict):
                 stats = stats.get("statistic", [])
+            bounds = {}
             for s in stats if isinstance(stats, list) else []:
-                if isinstance(s, dict) and s.get("name") == "Classification":
+                if not isinstance(s, dict):
+                    continue
+                if s.get("name") == "Classification":
                     if isinstance(s.get("count"), int):
                         out["point_count"] = s["count"]
                     if isinstance(s.get("bins"), dict):
                         out["class_counts"] = {
                             int(float(k)): int(v) for k, v in s["bins"].items()}
-                    break
+                elif s.get("name") in ("X", "Y") and "minimum" in s:
+                    ax = s["name"].lower()
+                    bounds[f"min{ax}"] = float(s["minimum"])
+                    bounds[f"max{ax}"] = float(s["maximum"])
+            if len(bounds) == 4:
+                out["bounds"] = bounds
             break
     return out
 
@@ -164,6 +172,12 @@ def run_combo(spec, combo, sweep_dir):
 
     # DTM: ground points (or all points if no ground classifier), idw
     res = float(spec.get("raster_resolution", 0.25))
+    # rasters span the full input extent, not just the points that survive
+    # filtering, so DTM/CHM line up with the plot (nodata where there is no
+    # data); fall back to the output cloud's own bounds for old sweeps
+    raster_bounds = _input_bounds(sweep_dir) or pdal_meta.get("bounds")
+    gdal_bounds = {"bounds": _gdal_bounds(raster_bounds)} \
+        if raster_bounds else {}
     if out.get("dtm", True):
         dtm_tif = os.path.join(run_dir, f"{rh}_dtm.tif")
         dtm_stages = [{"type": "readers.las", "filename": points_las}]
@@ -173,7 +187,8 @@ def run_combo(spec, combo, sweep_dir):
         dtm_stages.append({"type": "writers.gdal",
                            "filename": dtm_tif,
                            "resolution": res, "output_type": "idw",
-                           "gdaldriver": "GTiff", "data_type": "float"})
+                           "gdaldriver": "GTiff", "data_type": "float",
+                           **gdal_bounds})
         ok_dtm, err_dtm = _run_pdal_pipeline(dtm_stages)
         if ok_dtm and os.path.exists(dtm_tif):
             result["outputs"]["dtm"] = os.path.basename(dtm_tif)
@@ -196,7 +211,7 @@ def run_combo(spec, combo, sweep_dir):
                 {"type": "writers.gdal", "filename": chm_tif,
                  "dimension": "HeightAboveGround", "resolution": res,
                  "output_type": "max", "gdaldriver": "GTiff",
-                 "data_type": "float"},
+                 "data_type": "float", **gdal_bounds},
             ]
             ok_chm, err_chm = _run_pdal_pipeline(chm_stages)
             if ok_chm and os.path.exists(chm_tif):
@@ -253,6 +268,7 @@ def _input_class_histogram(spec, sweep_dir):
                 "class_counts": {str(k): v for k, v in
                                  parsed["class_counts"].items()},
                 "point_count": parsed.get("point_count"),
+                "bounds": parsed.get("bounds"),
             }
     try:
         if os.path.exists(meta_raw):
@@ -267,6 +283,32 @@ def _input_class_histogram(spec, sweep_dir):
     except OSError:
         pass
     return result
+
+
+def _input_bounds(sweep_dir):
+    """Full X/Y extent of the sweep input, cached by _input_class_histogram.
+
+    Returns {"minx", "miny", "maxx", "maxy"} or None when unknown (e.g. a
+    cache written by an older version without bounds).
+    """
+    cache = os.path.join(sweep_dir, "input_meta.json")
+    try:
+        with open(cache) as f:
+            b = json.load(f).get("bounds")
+        if b and all(k in b for k in ("minx", "miny", "maxx", "maxy")):
+            return b
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def _gdal_bounds(bounds):
+    """writers.gdal bounds option string for a bounds dict.
+
+    PDAL bounds format is ([minx,maxx],[miny,maxy]).
+    """
+    return (f"([{bounds['minx']},{bounds['maxx']}],"
+            f"[{bounds['miny']},{bounds['maxy']}])")
 
 
 def _sweep_warnings(spec, combos, input_classes):
