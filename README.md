@@ -67,12 +67,16 @@ present; use the browse button to pick any LAS/LAZ file.
      classification)
    - DTM (`dtm.tif`, ground points, IDW)
    - canopy height map (`chm.tif`, max height above ground per cell)
+   DTM and CHM rasters always span the full input extent (nodata where
+   there is no data), so they line up with the plot.
    Every run also stores the exact `pipeline.json` used, and point/class
      statistics in `meta.json`.
 3. **Results**: the sweep list on the left shows state and progress;
    selecting a sweep shows live status with stop/resume. The results view
    lists all runs with point counts and ground fraction; select one (or
    ctrl-click two) to open the detail view or the side-by-side comparison.
+   The preview pane has an output selector (top-down, cross-section, DTM,
+   canopy height) to swap what is shown.
    Runs can be **marked good/bad** (buttons or g/b/c keys) — marks persist
    per sweep in `ratings.json`. **export results** zips chosen outputs
    (point cloud, DTM, CHM, renders) for all/good/bad/selected runs into an
@@ -81,10 +85,12 @@ present; use the browse button to pick any LAS/LAZ file.
    inside the zip (they are already compressed).
 4. **Detail**: tabs for top-down, cross-section (strip position/width
    controls, rendered off the UI thread), a 3D scatter view
-   (drag-to-rotate, one show/hide toggle per classification class, a
+   (drag-to-rotate, a zoom slider and a point size setting, one
+   show/hide toggle per classification class, a
    point-count budget for interactive speed), DTM and canopy height, a
    class table with per-class output vs input counts, warnings, and an
-   "open folder" button for the run's files.
+   "open folder" button for the run's files. A "back to results" button
+   (also on the compare view) returns to the sweep's results list.
 5. **Compare**: any two runs side by side across the same output tabs
    (including a side-by-side 3D scatter view), with a synced
    cross-section slider.

@@ -25,3 +25,7 @@
 - Reverted all custom mouse handling in Viewer3D (mouse_init override, Button-3/Double-Button-3/B3-Motion/Release bindings, drag handlers, _right_button helper): stock mplot3d mouse behavior is back (left-drag rotate, right-drag axis-limits zoom, as before).
 - Zoom that actually scales the points is now a "zoom" slider in the 3D control bar (0.2-5.0, default 1.0), applied as a box zoom via set_box_aspect(aspect, zoom=...), debounced 150 ms; reset view restores 1.0. Platform-independent, no button-number assumptions.
 - tests/test_3d_zoom_slider.py (app-level: debounced slider applies zoom 3.0, limits unchanged, 72289 render px changed, reset restores 1.0): 7/7 PASS. tests/test_gui_items.py item3 section rewritten for the slider: PASS. test_app_smoke.py / test_runner_bounds.py re-run green.
+
+## 2026-11-13 — repo review + cleanup (user request)
+- Audited hosted tree (git ls-files): only project sources + tests/ (4 test files + this log); no debug/instrumentation code anywhere (grep for debug/XTest/event_generate/print in gui.py and pdal_sweep/ is clean; debug launcher and its log were removed before commit). Big LAS files, sweeps/, __pycache__ are gitignored.
+- All 4 test suites re-run green after cleanup. README updated to match the UI (zoom slider + point size in 3D view, preview output selector, back-to-results buttons, full-extent DTM/CHM rasters).
