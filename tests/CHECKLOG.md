@@ -10,3 +10,8 @@
 - Reviewed full diff of cdfcf23 + b6484c4 against all six notes.md items; one edge found and fixed: Viewer3D right-drag zoom divided by zero when a motion event jumped >= widget height (now guarded in `_on_b3_motion`).
 - `tests/test_app_smoke.py` (real App navigation: build -> results -> preview swap to DTM -> detail -> back -> compare -> back -> build): 11/11 PASS.
 - `tests/test_gui_items.py` re-run with 2 new zoom-guard checks: 22/22 PASS; `tests/test_runner_bounds.py` re-run: 6/6 PASS.
+
+## 2026-11-13 — item 3 "right-drag zoom does not work" report, investigation
+- mpl 3.11.2 source checked: default button-3 zoom only rescales axis limits; our takeover (`mouse_init(zoom_btn=[])`, Tk Button-3 bindings, `set_box_aspect(zoom=...)`) is present in the committed code and bindings persist (mpl binds once at canvas creation).
+- `tests/test_b3_app_drag.py`: real App -> run detail -> 3D tab -> synthetic button-3 press/motion/release on the actual canvas: handlers fired, zoom 1.0 -> 1.355, axis limits unchanged, 33566 render pixels changed. 9/9 PASS. All other suites re-run green (22+11+6).
+- Failure could not be reproduced headless. Real-X input injection (XTest) was not run: it moves the real pointer and needed approval.
