@@ -140,6 +140,17 @@ v._on_b3_motion(e)
 check("item3 zoom factor increased", v._zoom_factor > 1.0)
 check("item3 axis limits unchanged (box zoom, not limits zoom)",
       v._ax.get_xlim() == lim0)
+z_before = v._zoom_factor
+e.y = 100
+v._on_b3_press(e)
+e.y = 100 + 10 * e.widget.winfo_height()  # jump far past widget height
+try:
+    v._on_b3_motion(e)
+    ok = True
+except ZeroDivisionError:
+    ok = False
+check("item3 huge drag jump guarded (no ZeroDivisionError)", ok)
+check("item3 huge jump leaves zoom unchanged", v._zoom_factor == z_before)
 v._reset_view()
 root.update()
 check("item3 reset restores zoom 1", abs(v._zoom_factor - 1.0) < 1e-9)

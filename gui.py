@@ -1401,10 +1401,11 @@ class Viewer3D(tk.Frame):
         h = max(1, e.widget.winfo_height())
         dy = e.y - self._b3_y
         self._b3_y = e.y
-        if dy == 0:
-            return
+        denom = h - dy
+        if denom <= 0:
+            return  # pointer jumped past the widget height; skip this event
         self._zoom_factor = max(0.05, min(40.0,
-                                          self._zoom_factor * h / (h - dy)))
+                                          self._zoom_factor * h / denom))
         self._ax.set_box_aspect(self._aspect, zoom=self._zoom_factor)
         self.canvas.draw_idle()
 

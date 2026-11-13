@@ -5,3 +5,8 @@
 - Item 6 unit (runner.py): `~/miniconda3/envs/pdal/bin/python tests/test_runner_bounds.py` — 6/6 PASS (_parse_meta extracts X/Y bounds; _gdal_bounds string; _input_bounds cache/old-cache/missing).
 - Item 6 end-to-end: `pdal pipeline` on readers.faux bounds ([0,100],[0,100]) + filters.range X[20:80] + writers.gdal, with vs without explicit `bounds`; gdalinfo shows no-bounds raster 61x101 at origin X~19.2 (shrunk to surviving points) vs with-bounds 101x101 at origin (0,101) (full extent, nodata elsewhere). Also confirmed PDAL bounds order is ([minx,maxx],[miny,maxy]).
 - `python -m py_compile gui.py pdal_sweep/runner.py` — OK.
+
+## 2026-11-13 — review pass (re-checked work against notes.md)
+- Reviewed full diff of cdfcf23 + b6484c4 against all six notes.md items; one edge found and fixed: Viewer3D right-drag zoom divided by zero when a motion event jumped >= widget height (now guarded in `_on_b3_motion`).
+- `tests/test_app_smoke.py` (real App navigation: build -> results -> preview swap to DTM -> detail -> back -> compare -> back -> build): 11/11 PASS.
+- `tests/test_gui_items.py` re-run with 2 new zoom-guard checks: 22/22 PASS; `tests/test_runner_bounds.py` re-run: 6/6 PASS.
