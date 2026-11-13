@@ -1,0 +1,1 @@
+{"stages": {"readers.las.input": {"count": 1000}, "filters.stats.stats": {"statistic": [{"name": "Classification", "count": 1000, "bins": {"2": 100}}, {"name": "X", "minimum": -114539.9, "maximum": -114524.91}, {"name": "Y", "minimum": 183289.75, "maximum": 183309.73}, {"name": "Z", "minimum": 966.6, "maximum": 968.4}]}}}
