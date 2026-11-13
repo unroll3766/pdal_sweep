@@ -15,3 +15,8 @@
 - mpl 3.11.2 source checked: default button-3 zoom only rescales axis limits; our takeover (`mouse_init(zoom_btn=[])`, Tk Button-3 bindings, `set_box_aspect(zoom=...)`) is present in the committed code and bindings persist (mpl binds once at canvas creation).
 - `tests/test_b3_app_drag.py`: real App -> run detail -> 3D tab -> synthetic button-3 press/motion/release on the actual canvas: handlers fired, zoom 1.0 -> 1.355, axis limits unchanged, 33566 render pixels changed. 9/9 PASS. All other suites re-run green (22+11+6).
 - Failure could not be reproduced headless. Real-X input injection (XTest) was not run: it moves the real pointer and needed approval.
+
+## 2026-11-13 — item 3 fixed after user report (app restarted, right-drag still "did nothing")
+- User ran the instrumented launcher (tests/debug_b3.py) and right-dragged twice: log showed our handlers DO fire on real input on the canvas, but zoom only responded to vertical dy with per-event multiplication, so a mostly-horizontal reflex drag (dy=-12 over 182 px) moved zoom 1.0 -> 0.94 — imperceptible.
+- Fix: zoom is now press-relative and follows the dominant drag axis (down/right = zoom in), clamped [0.05, 40]; also bound <Double-Button-3> because a rapid second press arrives as Double, not ButtonPress-3.
+- tests/test_b3_app_drag.py: 13/13 PASS (vertical 120 px -> zoom 1.429 = H/(H-120); horizontal 150 px -> 1.696; drag up zooms out; huge jump clamped; limits unchanged; 24430 render px changed). test_gui_items.py / test_app_smoke.py / test_runner_bounds.py re-run green.

@@ -1268,6 +1268,8 @@ class Viewer3D(tk.Frame):
         self._zoom_factor = 1.0   # box zoom; right-drag multiplies this
         self._aspect = (4.0, 4.0, 3.0)
         self._b3_y = None
+        self._b3_x = None
+        self._b3_z0 = 1.0
         ctrl = tk.Frame(self, bg=BG)
         ctrl.pack(fill="x", pady=(0, 2))
         tk.Label(ctrl, text="max points", bg=BG, fg=MUTED).pack(
@@ -1365,6 +1367,8 @@ class Viewer3D(tk.Frame):
         # of mplot3d's default, which only rescales the axis limits
         ax.mouse_init(zoom_btn=[])
         w.bind("<ButtonPress-3>", self._on_b3_press)
+        # a rapid second press arrives as Double-Button-3, not ButtonPress-3
+        w.bind("<Double-Button-3>", self._on_b3_press)
         w.bind("<B3-Motion>", self._on_b3_motion)
         w.bind("<ButtonRelease-3>", self._on_b3_release)
 
@@ -1392,20 +1396,27 @@ class Viewer3D(tk.Frame):
             self.canvas.draw_idle()
 
     def _on_b3_press(self, e):
+        # zoom is a function of the total drag from the press point, so
+        # short and fast drags behave predictably
+        self._b3_x = e.x
         self._b3_y = e.y
+        self._b3_z0 = self._zoom_factor
 
     def _on_b3_motion(self, e):
-        # same scale formula mplot3d uses: dragging down zooms in
         if self._b3_y is None or getattr(self, "_ax", None) is None:
             return
+        w = max(1, e.widget.winfo_width())
         h = max(1, e.widget.winfo_height())
+        dx = e.x - self._b3_x
         dy = e.y - self._b3_y
-        self._b3_y = e.y
-        denom = h - dy
-        if denom <= 0:
-            return  # pointer jumped past the widget height; skip this event
-        self._zoom_factor = max(0.05, min(40.0,
-                                          self._zoom_factor * h / denom))
+        # zoom along whichever axis the drag is mostly on; dragging
+        # down or right (positive d) zooms in
+        if abs(dy) >= abs(dx):
+            ref, d = h, dy
+        else:
+            ref, d = w, dx
+        denom = max(1.0, ref - d)
+        self._zoom_factor = max(0.05, min(40.0, self._b3_z0 * ref / denom))
         self._ax.set_box_aspect(self._aspect, zoom=self._zoom_factor)
         self.canvas.draw_idle()
 

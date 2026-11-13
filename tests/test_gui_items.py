@@ -133,6 +133,7 @@ class E:
 
 e = E()
 e.widget = v.canvas.get_tk_widget()
+e.x = 100
 e.y = 100
 v._on_b3_press(e)
 e.y = 120  # drag down 20 px on the (small) widget: zoom in
@@ -149,8 +150,8 @@ try:
     ok = True
 except ZeroDivisionError:
     ok = False
-check("item3 huge drag jump guarded (no ZeroDivisionError)", ok)
-check("item3 huge jump leaves zoom unchanged", v._zoom_factor == z_before)
+check("item3 huge drag jump clamped, no error",
+      ok and 0.05 <= v._zoom_factor <= 40.0)
 v._reset_view()
 root.update()
 check("item3 reset restores zoom 1", abs(v._zoom_factor - 1.0) < 1e-9)
