@@ -3,11 +3,12 @@ string, input-bounds cache reading. No LAS files involved."""
 import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, "/home/theo/Documents/pdal_sweep")
 from pdal_sweep import runner as R
 
-SCRATCH = os.path.dirname(os.path.abspath(__file__))
+SCRATCH = tempfile.mkdtemp(prefix="pdal_sweep_test_")
 FAIL = []
 
 
